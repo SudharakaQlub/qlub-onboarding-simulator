@@ -22,6 +22,8 @@ function seed(): Trainee[] {
             'vendor-panel-basics/dashboard': done(4, 4),
             'vendor-panel-basics/orders': done(3, 4),
             'vendor-panel-basics/payments': done(3, 3),
+            'customer-app-basics/guest-journey': done(5, 5),
+            'customer-app-basics/when-stuck': done(3, 3),
           }
         : s.id === 'sara'
           ? { 'vendor-panel-basics/dashboard': done(4, 4) }

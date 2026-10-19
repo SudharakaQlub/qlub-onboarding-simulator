@@ -4,6 +4,7 @@
 
 import type { PeriodKey } from '../data/periods'
 import type { PageKey } from '../store'
+import type { CustomerScreenId } from '../data/customerApp'
 
 export interface TrainingStep {
   id: string
@@ -22,6 +23,9 @@ export interface TrainingStep {
   reset?: boolean
   /** Set the panel's date range when the step starts, so the screen has data to show. */
   period?: PeriodKey
+  /** Customer App only: the screen to show on the guest's phone (see src/data/customerApp.ts).
+   *  Opens the Customer App page automatically. */
+  screen?: CustomerScreenId
   /** Act as a manager during this step (e.g. so Refund is enabled). */
   asManager?: boolean
   /** Highlighted tip, e.g. a common mistake. */

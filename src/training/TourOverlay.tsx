@@ -15,7 +15,7 @@ const PAD = 6
 const CARD_W = 340
 
 export function TourOverlay() {
-  const { tour, setTour, packs, setPage, setPeriod, closeOverlays, setAsManager, voiceOn, toggleVoice } = useStore()
+  const { tour, setTour, packs, setPage, setPeriod, closeOverlays, setAsManager, voiceOn, toggleVoice, setCustomerScreen } = useStore()
   const pack = packs.find((p) => p.id === tour?.packId)
   const mod = pack?.modules.find((m) => m.id === tour?.moduleId)
   const steps = mod ? (tour?.lessonId ? mod.steps.filter((s) => s.lesson === tour.lessonId) : mod.steps) : []
@@ -45,6 +45,10 @@ export function TourOverlay() {
     if (!step) return
     if (step.reset) closeOverlays()
     if (step.page) setPage(step.page)
+    if (step.screen) {
+      setCustomerScreen(step.screen)
+      setPage('customerApp')
+    }
     if (step.period) setPeriod(step.period)
     setAsManager(!!step.asManager)
     setRect(null)
@@ -84,6 +88,8 @@ export function TourOverlay() {
           scrolledFor.current = step.id
           const r = el.getBoundingClientRect()
           if (r.top < 60 || r.bottom > window.innerHeight - 40) el.scrollIntoView({ block: 'center' })
+          // Targets inside a scrolling box (e.g. the Customer App phone) can be hidden by the box, not the window.
+          else el.scrollIntoView({ block: 'nearest' })
         }
         const r = el.getBoundingClientRect()
         setRect((prev) =>
