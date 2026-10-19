@@ -1,0 +1,676 @@
+{
+  "id": "vendor-panel-basics",
+  "title": "Vendor Panel basics",
+  "product": "Vendor Panel",
+  "market": "AU",
+  "version": "1.0.0",
+  "description": "Dashboard, orders and payments, step by step on the demo venue. From Rohan's Vendor Panel Training Plan.",
+  "modules": [
+    {
+      "id": "dashboard",
+      "title": "Dashboard",
+      "minutes": 12,
+      "summary": "Pick a period, read the five figures, estimate the payout.",
+      "lessons": [
+        {
+          "id": "1A",
+          "title": "Select a time period"
+        },
+        {
+          "id": "1B",
+          "title": "The five figures"
+        },
+        {
+          "id": "1C",
+          "title": "Calculate the payout"
+        }
+      ],
+      "steps": [
+        {
+          "id": "1A.1",
+          "lesson": "1A",
+          "title": "Open the Dashboard",
+          "instruction": "Click Dashboard in the left menu. It's the first screen managers check each shift.",
+          "target": "nav-dashboard",
+          "advance": "click",
+          "reset": true,
+          "say": "Let's start on the Dashboard. Click it in the left menu."
+        },
+        {
+          "id": "1A.2",
+          "lesson": "1A",
+          "title": "Open Time Settings",
+          "instruction": "Click the date button at the top right. It shows Today by default.",
+          "target": "date-button",
+          "advance": "click",
+          "page": "dashboard",
+          "say": "Click the date button at the top right."
+        },
+        {
+          "id": "1A.3",
+          "lesson": "1A",
+          "title": "Pick a period",
+          "instruction": "Choose Last 30 Days. You can also pick Today, Yesterday, This Week, Last 7 Days, This Month or a Custom range.",
+          "target": "time-option-last30",
+          "advance": "click",
+          "note": "Watch out: “Today” is the venue's business day, 3:00 AM to 2:59 AM the next morning, not midnight to midnight.",
+          "say": "Pick Last 30 Days."
+        },
+        {
+          "id": "1A.4",
+          "lesson": "1A",
+          "title": "Confirm",
+          "instruction": "Click Confirm to apply the period.",
+          "target": "time-confirm",
+          "advance": "click"
+        },
+        {
+          "id": "1A.5",
+          "lesson": "1A",
+          "title": "Everything updates",
+          "instruction": "Every figure now reads “Last 30 Days”. The period you pick carries across to Orders and Payments too.",
+          "target": "kpi-revenue",
+          "advance": "next",
+          "say": "All figures update to the period you picked, and it carries across tabs."
+        },
+        {
+          "id": "1B.1",
+          "lesson": "1B",
+          "title": "Revenue",
+          "instruction": "Bill amounts paid by card or wallet. It excludes tips, fees and loyalty credit.",
+          "target": "kpi-revenue",
+          "advance": "next",
+          "page": "dashboard",
+          "period": "last30",
+          "reset": true,
+          "say": "Revenue is the bill amount paid by card or wallet. No tips, no fees, no loyalty credit."
+        },
+        {
+          "id": "1B.2",
+          "lesson": "1B",
+          "title": "Tips",
+          "instruction": "Tips guests added on top of the bill. They belong to the venue.",
+          "target": "kpi-tips",
+          "advance": "next"
+        },
+        {
+          "id": "1B.3",
+          "lesson": "1B",
+          "title": "Refunds",
+          "instruction": "Money returned to guests in the period.",
+          "target": "kpi-refunds",
+          "advance": "next"
+        },
+        {
+          "id": "1B.4",
+          "lesson": "1B",
+          "title": "Diner Fee",
+          "instruction": "qlub's fee, paid by the guest on top of the bill. It is not venue money.",
+          "target": "kpi-dinerfee",
+          "advance": "next"
+        },
+        {
+          "id": "1B.5",
+          "lesson": "1B",
+          "title": "Vendor Fee",
+          "instruction": "qlub's fee charged to the venue.",
+          "target": "kpi-vendorfee",
+          "advance": "next"
+        },
+        {
+          "id": "1B.6",
+          "lesson": "1B",
+          "title": "Switch the chart",
+          "instruction": "Click Tips to switch the chart from bill revenue to tips per day.",
+          "target": "tab-tips",
+          "advance": "click"
+        },
+        {
+          "id": "1B.7",
+          "lesson": "1B",
+          "title": "Tap a day",
+          "instruction": "Click 29 Sep on the chart.",
+          "target": "chart-day-2026-09-29",
+          "advance": "click"
+        },
+        {
+          "id": "1B.8",
+          "lesson": "1B",
+          "title": "Split by card brand",
+          "instruction": "The right panel splits that day by card brand: Visa, Mastercard, Loyalty.",
+          "target": "card-split",
+          "advance": "next",
+          "note": "Loyalty here is club credit redeemed, not a card."
+        },
+        {
+          "id": "1B.9",
+          "lesson": "1B",
+          "title": "Popular Items",
+          "instruction": "Your top 10 items by units sold, with average price.",
+          "target": "popular-items",
+          "advance": "next",
+          "note": "Popular Items has its own range dropdown. It does not follow the date button."
+        },
+        {
+          "id": "1C.1",
+          "lesson": "1C",
+          "title": "Calculate the payout",
+          "instruction": "Payout = Revenue + Tips − Refunds − Vendor Fee. For the last 30 days: $2,001.79 + $185.55 − $0.00 − $57.54 = $2,129.80.",
+          "target": "kpi-row",
+          "advance": "next",
+          "page": "dashboard",
+          "period": "last30",
+          "reset": true,
+          "note": "The Diner Fee goes to qlub, so it's never part of the payout. Settlement timing: confirm with Finance.",
+          "say": "Payout is revenue plus tips, minus refunds and the vendor fee."
+        }
+      ],
+      "checks": [
+        {
+          "question": "A guest paid at 1:30 AM on Saturday. Which business day does it count in?",
+          "options": [
+            "Saturday",
+            "Friday",
+            "Sunday"
+          ],
+          "answer": 1,
+          "explain": "Right. The business day runs 3:00 AM to 2:59 AM, so 1:30 AM Saturday still belongs to Friday."
+        },
+        {
+          "question": "A guest pays a $100 bill + $10 tip + $2.60 diner fee. How much goes into Revenue?",
+          "options": [
+            "$112.60",
+            "$110.00",
+            "$100.00"
+          ],
+          "answer": 2,
+          "explain": "Right. Revenue is the bill only: tips and the diner fee are counted separately."
+        },
+        {
+          "question": "On 29 Sep, how much was paid with Mastercard?",
+          "options": [
+            "$30.50",
+            "$119.76",
+            "$4.74"
+          ],
+          "answer": 0,
+          "explain": "Right. Tap 29 Sep on the chart and the card split shows Mastercard $30.50."
+        },
+        {
+          "question": "Revenue $500, Tips $40, Refunds $20, Vendor Fee $14. What's the payout?",
+          "options": [
+            "$520",
+            "$506",
+            "$546"
+          ],
+          "answer": 1,
+          "explain": "Right. 500 + 40 − 20 − 14 = $506."
+        }
+      ]
+    },
+    {
+      "id": "orders",
+      "title": "Orders",
+      "minutes": 10,
+      "summary": "Read the orders list, find an order, look inside, track tables live.",
+      "lessons": [
+        {
+          "id": "2A",
+          "title": "Read the orders list"
+        },
+        {
+          "id": "2B",
+          "title": "Find a specific order"
+        },
+        {
+          "id": "2C",
+          "title": "Inside an order"
+        },
+        {
+          "id": "2D",
+          "title": "Track tables live"
+        }
+      ],
+      "steps": [
+        {
+          "id": "2A.1",
+          "lesson": "2A",
+          "title": "Open Orders",
+          "instruction": "Click Orders in the left menu.",
+          "target": "nav-orders",
+          "advance": "click",
+          "reset": true,
+          "period": "last30"
+        },
+        {
+          "id": "2A.2",
+          "lesson": "2A",
+          "title": "One row = one bill",
+          "instruction": "Bill Amount is the table's full bill. Paid Amount is what's been settled so far.",
+          "target": "orders-table",
+          "advance": "next",
+          "page": "orders",
+          "say": "Each row is one bill."
+        },
+        {
+          "id": "2A.3",
+          "lesson": "2A",
+          "title": "Customer Paid",
+          "instruction": "Paid + Tip + qlub Diner Fee. Table 1: $113.00 + $17.20 + $1.70 = $131.90.",
+          "target": "orders-col-customer-paid",
+          "advance": "next"
+        },
+        {
+          "id": "2A.4",
+          "lesson": "2A",
+          "title": "Status and Remaining",
+          "instruction": "Fully paid means $0 left. Partially Paid means the Remaining amount is still owed.",
+          "target": "orders-col-status",
+          "advance": "next",
+          "note": "A purple Loyalty tag means part of the bill was paid with club credit."
+        },
+        {
+          "id": "2B.1",
+          "lesson": "2B",
+          "title": "Filter by status",
+          "instruction": "Click the Status filter.",
+          "target": "orders-status-filter",
+          "advance": "click",
+          "page": "orders",
+          "period": "last30",
+          "reset": true
+        },
+        {
+          "id": "2B.2",
+          "lesson": "2B",
+          "title": "Show tables that still owe",
+          "instruction": "Choose Partially Paid.",
+          "target": "orders-status-partially-paid",
+          "advance": "click"
+        },
+        {
+          "id": "2B.3",
+          "lesson": "2B",
+          "title": "Search by Order ID",
+          "instruction": "You can also paste the 10-digit Order ID from the guest's receipt, or search by Table Name.",
+          "target": "orders-id-search",
+          "advance": "next",
+          "note": "Nothing showing? Widen the date range first."
+        },
+        {
+          "id": "2C.1",
+          "lesson": "2C",
+          "title": "Open an order",
+          "instruction": "Click details on Table 2's order.",
+          "target": "order-details-7159271922",
+          "advance": "click",
+          "page": "orders",
+          "period": "last30",
+          "reset": true
+        },
+        {
+          "id": "2C.2",
+          "lesson": "2C",
+          "title": "Each payment",
+          "instruction": "Top: every payment with time, tip, method, last 4 digits and status. Split bills show one line per guest.",
+          "target": "order-payments",
+          "advance": "next"
+        },
+        {
+          "id": "2C.3",
+          "lesson": "2C",
+          "title": "The items",
+          "instruction": "Middle: the items, synced from the POS, with quantity, unit price and line total.",
+          "target": "order-items",
+          "advance": "next",
+          "note": "Items don't match the POS bill? That's a POS sync issue: escalate in the venue's WhatsApp support group."
+        },
+        {
+          "id": "2C.4",
+          "lesson": "2C",
+          "title": "Print or Download",
+          "instruction": "Bottom: give a guest or manager a copy of the bill.",
+          "target": "order-print",
+          "advance": "next"
+        },
+        {
+          "id": "2C.5",
+          "lesson": "2C",
+          "title": "Close the order",
+          "instruction": "Click the X to close it.",
+          "target": "order-close",
+          "advance": "click"
+        },
+        {
+          "id": "2D.1",
+          "lesson": "2D",
+          "title": "Open Table View",
+          "instruction": "Click Table View in the left menu. Keep it open on the floor to see every open bill.",
+          "target": "nav-tableView",
+          "advance": "click",
+          "reset": true
+        },
+        {
+          "id": "2D.2",
+          "lesson": "2D",
+          "title": "Read the colours",
+          "instruction": "Yellow: partially paid, still owes. Light green: paid, including loyalty. Green: fully paid (a heart means a tip).",
+          "target": "tableview-legend",
+          "advance": "next",
+          "page": "tableView",
+          "note": "Confirm the exact light-green meaning with Product before go-live."
+        },
+        {
+          "id": "2D.3",
+          "lesson": "2D",
+          "title": "Open a yellow table",
+          "instruction": "Table 2 is yellow. Click it to see the details.",
+          "target": "table-toggle-7159271922",
+          "advance": "click"
+        },
+        {
+          "id": "2D.4",
+          "lesson": "2D",
+          "title": "Check what's still owed",
+          "instruction": "Remaining shows what the table still owes: $169.20.",
+          "target": "table-remaining-7159271922",
+          "advance": "next",
+          "note": "Guest says “we've paid” but the table is yellow? Check Remaining first."
+        }
+      ],
+      "checks": [
+        {
+          "question": "Table 2 shows Partially Paid with $169.20 remaining. Can the guests leave?",
+          "options": [
+            "Yes, they've paid something",
+            "No, $169.20 is still to pay",
+            "Only if a manager approves"
+          ],
+          "answer": 1,
+          "explain": "Right. Partially Paid means the Remaining amount is still owed."
+        },
+        {
+          "question": "How do you show only the tables that still owe money?",
+          "options": [
+            "Status → Partially Paid",
+            "Status → Loyalty",
+            "Export the list"
+          ],
+          "answer": 0,
+          "explain": "Right. Filter Status to Partially Paid."
+        },
+        {
+          "question": "How did the guest on table 2 (16 Oct) pay, and was it accepted?",
+          "options": [
+            "Visa, Rejected",
+            "qlubcardwallet, Accepted",
+            "Cash, Accepted"
+          ],
+          "answer": 1,
+          "explain": "Right. The order's payment line shows qlubcardwallet, Accepted."
+        },
+        {
+          "question": "A guest says “we've paid” but their table is yellow. What do you check?",
+          "options": [
+            "The Tips figure",
+            "The Remaining amount on that table",
+            "The Popular Items list"
+          ],
+          "answer": 1,
+          "explain": "Right. Remaining tells you exactly what's still owed."
+        }
+      ]
+    },
+    {
+      "id": "payments",
+      "title": "Payments & Refunds",
+      "minutes": 8,
+      "summary": "Match a payment to a guest, read statuses, issue a refund.",
+      "lessons": [
+        {
+          "id": "3A",
+          "title": "Match a payment to a guest"
+        },
+        {
+          "id": "3B",
+          "title": "Issue a refund"
+        }
+      ],
+      "steps": [
+        {
+          "id": "3A.1",
+          "lesson": "3A",
+          "title": "Open Payments",
+          "instruction": "Click Payments in the left menu.",
+          "target": "nav-payments",
+          "advance": "click",
+          "reset": true,
+          "period": "last30"
+        },
+        {
+          "id": "3A.2",
+          "lesson": "3A",
+          "title": "One row per guest payment",
+          "instruction": "Each row is one guest's payment, so a split bill shows several rows. Rows with no method are loyalty credit.",
+          "target": "payments-table",
+          "advance": "next",
+          "page": "payments"
+        },
+        {
+          "id": "3A.3",
+          "lesson": "3A",
+          "title": "Search",
+          "instruction": "Search by order ID, or match the last 4 digits of the guest's card. Try typing 4242.",
+          "target": "payments-search",
+          "advance": "next"
+        },
+        {
+          "id": "3A.4",
+          "lesson": "3A",
+          "title": "Read the status",
+          "instruction": "Filter by status: Accepted, Rejected or Refunded.",
+          "target": "payments-status-filter",
+          "advance": "next",
+          "note": "Rejected = the card was declined and no money was taken. Ask the guest to pay again."
+        },
+        {
+          "id": "3B.1",
+          "lesson": "3B",
+          "title": "Find the payment",
+          "instruction": "Table 1 paid $131.90 by Visa ending 4242. The guest says they were overcharged.",
+          "target": "payment-row-5551688701",
+          "advance": "next",
+          "page": "payments",
+          "period": "last30",
+          "reset": true
+        },
+        {
+          "id": "3B.2",
+          "lesson": "3B",
+          "title": "Open the menu",
+          "instruction": "Click ⋮ at the end of the row.",
+          "target": "payment-menu-5551688701",
+          "advance": "click"
+        },
+        {
+          "id": "3B.3",
+          "lesson": "3B",
+          "title": "Choose Refund",
+          "instruction": "Click Refund. (Print gives a receipt instead.)",
+          "target": "payment-refund",
+          "advance": "click",
+          "note": "Refund greyed out? It needs refund permission. Ask a manager who has it."
+        },
+        {
+          "id": "3B.4",
+          "lesson": "3B",
+          "title": "Enter the amount",
+          "instruction": "Enter how much to refund. You can refund part of a payment.",
+          "target": "refund-amount",
+          "advance": "next",
+          "note": "Concept screen: the real dialog still needs capturing with a manager login."
+        },
+        {
+          "id": "3B.5",
+          "lesson": "3B",
+          "title": "Confirm",
+          "instruction": "Click Refund to confirm.",
+          "target": "refund-confirm",
+          "advance": "click"
+        },
+        {
+          "id": "3B.6",
+          "lesson": "3B",
+          "title": "Done",
+          "instruction": "The status changes to Refunded, and the Dashboard's Refunds figure goes up.",
+          "target": "payment-row-5551688701",
+          "advance": "next"
+        }
+      ],
+      "checks": [
+        {
+          "question": "A guest with a Visa ending 4242 says they paid on 16 Oct. Which payment is theirs?",
+          "options": [
+            "5551688701, $131.90",
+            "7159271922, $5.89",
+            "3200850479, $123.02"
+          ],
+          "answer": 0,
+          "explain": "Right. Search 4242 and pick the 16 Oct row: order 5551688701, $131.90."
+        },
+        {
+          "question": "You can't click Refund. What do you do?",
+          "options": [
+            "Refund it in cash",
+            "Ask a manager with refund access",
+            "Tell the guest refunds aren't possible"
+          ],
+          "answer": 1,
+          "explain": "Right. Refunds need a permission: a manager with refund access can do it."
+        },
+        {
+          "question": "A payment shows Rejected. What does that mean?",
+          "options": [
+            "The guest was refunded",
+            "The card was declined and no money was taken",
+            "It's still processing"
+          ],
+          "answer": 1,
+          "explain": "Right. Ask the guest to pay again."
+        }
+      ]
+    }
+  ],
+  "faqs": [
+    {
+      "q": "How do I refund a guest?",
+      "a": "Payments → find the Accepted payment → ⋮ → Refund → enter the amount → confirm. No Refund option? Ask a manager with refund access.",
+      "lesson": "payments/3B",
+      "keywords": [
+        "refund",
+        "money back",
+        "overcharged",
+        "return"
+      ]
+    },
+    {
+      "q": "How do I see yesterday's or previous days' data?",
+      "a": "Click the date button at the top right and pick Yesterday, Last 7 Days or a Custom range. The period carries across Dashboard, Orders and Payments.",
+      "lesson": "dashboard/1A",
+      "keywords": [
+        "previous",
+        "history",
+        "date",
+        "yesterday",
+        "last night",
+        "takings",
+        "range"
+      ]
+    },
+    {
+      "q": "What counts as Revenue?",
+      "a": "Bill amounts paid by card or wallet. Tips, the Diner Fee and loyalty credit are not part of Revenue.",
+      "lesson": "dashboard/1B",
+      "keywords": [
+        "revenue",
+        "sales",
+        "figures",
+        "fee",
+        "tips"
+      ]
+    },
+    {
+      "q": "How is the payout calculated?",
+      "a": "Payout = Revenue + Tips − Refunds − Vendor Fee. The Diner Fee goes to qlub. Settlement timing: check with Finance.",
+      "lesson": "dashboard/1C",
+      "keywords": [
+        "payout",
+        "paid out",
+        "settlement",
+        "owner",
+        "transfer"
+      ]
+    },
+    {
+      "q": "A guest says they paid but the table is yellow",
+      "a": "Yellow means partially paid. Open Table View, click the table and check Remaining: that's what's still owed.",
+      "lesson": "orders/2D",
+      "keywords": [
+        "paid",
+        "yellow",
+        "table",
+        "remaining",
+        "leave",
+        "owe"
+      ]
+    },
+    {
+      "q": "How do I find a specific order?",
+      "a": "Orders → set the date → search by Table Name or paste the Order ID from the receipt. Nothing showing? Widen the date range.",
+      "lesson": "orders/2B",
+      "keywords": [
+        "find",
+        "search",
+        "order",
+        "receipt",
+        "ticket"
+      ]
+    },
+    {
+      "q": "A guest wants a copy of their bill",
+      "a": "Orders → click details on the order → Print or Download.",
+      "lesson": "orders/2C",
+      "keywords": [
+        "copy",
+        "bill",
+        "print",
+        "receipt",
+        "download",
+        "invoice"
+      ]
+    },
+    {
+      "q": "The guest's card was charged twice",
+      "a": "Payments → search the order ID or last 4 digits and check each row's status. Rejected means no money was taken. Two Accepted rows for one share? Refund one, or ask a manager.",
+      "lesson": "payments/3A",
+      "keywords": [
+        "charged twice",
+        "double",
+        "declined",
+        "rejected",
+        "card"
+      ]
+    },
+    {
+      "q": "How do split payments work?",
+      "a": "Each guest pays their share and Payments shows one row per guest. The order stays Partially Paid until Remaining reaches $0.",
+      "lesson": "orders/2C",
+      "keywords": [
+        "split",
+        "share",
+        "partial",
+        "separate"
+      ]
+    }
+  ]
+}

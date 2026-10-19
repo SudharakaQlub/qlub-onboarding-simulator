@@ -1,0 +1,7 @@
+{
+  "packs": ["vendor-panel-basics"],
+  "comingSoon": [
+    { "title": "Customer App basics", "product": "Customer App", "owner": "Zaheem" },
+    { "title": "SoftPOS basics", "product": "SoftPOS", "owner": "Ross" }
+  ]
+}
