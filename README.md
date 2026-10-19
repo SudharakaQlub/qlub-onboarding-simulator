@@ -50,8 +50,13 @@ npm start          # serve dist/ on $PORT (used by Railway)
 Each step points at a `data-tour` target on screen. Open the app with **`?targets=1`** to see every target
 on the current screen outlined with its id. Full format and target list: [docs/AUTHORING.md](docs/AUTHORING.md).
 
-New screens (e.g. Customer App, SoftPOS) need a mock page with `data-tour` attributes first; after that,
+New screens (e.g. SoftPOS) need a mock page with `data-tour` attributes first; after that,
 their trainings are JSON only.
+
+**Customer App** (`customer-app-basics`, Zaheem): a guest-view page (`src/pages/CustomerApp.tsx`) shows real
+Customer App screenshots on a phone with tap targets on top. Steps use `"screen": "tip-pay"` etc. to pick the
+screen; FAQ 3 hands over to the Vendor Panel's Table View to confirm a payment. Note: these screenshots were
+captured at live venues; swap them for demo-venue captures (`public/customer-app/`) before sharing outside the team.
 
 ## Deploying (Qlub Apps)
 
