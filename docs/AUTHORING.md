@@ -44,6 +44,7 @@ Progress is stored per `packId/moduleId`, so don't rename ids after people have 
 | `target` | no | `data-tour` id to highlight. Leave out for a centred info card |
 | `advance` | yes | `click`: moves on when the trainee clicks the target. `next`: trainee presses Next |
 | `page` | no | Navigate here when the step starts: `dashboard`, `orders`, `payments`, `tableView`, `training` |
+| `screen` | no | Customer App only: the screen to show on the guest's phone (`landing`, `menu`, `bill-items`, `bill`, `tip-pay`, `success`, `not-ordered`). Opens the Customer App page |
 | `period` | no | Set the date range: `today`, `yesterday`, `thisWeek`, `last7`, `thisMonth`, `last30` |
 | `reset` | no | Close drawers/dialogs and clear filters. Use on the first step of each lesson |
 | `asManager` | no | Treat the trainee as a manager during this step (Refund is enabled). Staff logins can't refund otherwise |
@@ -98,6 +99,19 @@ Open the app with `?targets=1` to outline every target on screen with its id. Cu
 
 **Table View:** `tableview-options`, `tableview-legend`, `table-tile-<orderId>`, `table-toggle-<orderId>`,
 `table-details-<orderId>`, `table-remaining-<orderId>`
+
+**Customer App (guest view):** `ca-phone`, `ca-screen`, and per screen:
+`landing`: `ca-landing-actions`, `ca-pay-now`, `ca-view-menu` ·
+`menu`: `ca-menu-grid`, `ca-menu-our-food` ·
+`bill-items`: `ca-bill-table`, `ca-bill-items`, `ca-bill-pay-fully` ·
+`bill`: `ca-bill-actions`, `ca-split-bill`, `ca-pay-fully` ·
+`tip-pay`: `ca-tip-options`, `ca-tip-remove`, `ca-custom-tip`, `ca-you-pay`, `ca-payment-methods`, `ca-pay-button` ·
+`success`: `ca-status-card`, `ca-status-badge`, `ca-stars-low`, `ca-stars-high`, `ca-receipt`, `ca-back-home` ·
+`not-ordered`: `ca-not-ordered-msg`, `ca-try-again`, `ca-check-menu`
+
+Screens and their tap targets are defined in `src/data/customerApp.ts` (images in `public/customer-app/`).
+To add a screen: drop the screenshot in that folder and add an entry with hotspot rectangles in the original
+capture's pixels.
 
 **Staff Training:** `who-card`, `name-input`, `name-continue`, `ask-box`, `ask-input`, `ask-mic`, `ask-submit`,
 `ask-data-answer`, `ask-open-panel`, `team-progress`
