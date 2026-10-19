@@ -5,6 +5,7 @@ import {
   IconDashboard,
   IconLoyalty,
   IconOrders,
+  IconPhone,
   IconPayments,
   IconReports,
   IconReviews,
@@ -49,6 +50,7 @@ export function Sidebar() {
       {ITEMS.map(item)}
       <div className="nav-divider" />
       {item(['training', 'Staff Training', IconTraining])}
+      {item(['customerApp', 'Customer App', IconPhone])}
       <div style={{ flex: 1 }} />
       {item(['settings', 'Settings', IconSettings])}
     </nav>

@@ -98,3 +98,6 @@ export const IconVolume = (p: P) => (
 export const IconMute = (p: P) => (
   <svg {...base(p)}><path d="M11 5 6 9H3v6h3l5 4V5z" /><path d="m22 9-6 6M16 9l6 6" /></svg>
 )
+export const IconPhone = (p: P) => (
+  <svg {...base(p)}><rect x="6" y="2.5" width="12" height="19" rx="2.5" /><path d="M10.5 18.5h3" /></svg>
+)
