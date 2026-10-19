@@ -16,6 +16,8 @@ concurrency:
 
 jobs:
   build:
+    # Public GitHub Pages only for the personal demo repo. The qlubapps copy deploys on Railway (qlubapps.com).
+    if: github.repository_owner == 'SudharakaQlub'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
