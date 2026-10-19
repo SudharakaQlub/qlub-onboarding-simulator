@@ -4,6 +4,7 @@ import { periodFor, round2, type Period, type PeriodKey } from './data/periods'
 import { loadTrainees, resetTrainees, saveTrainees, type Completion, type Trainee } from './training/progress'
 import type { TrainingPack } from './training/types'
 import { loadVoiceOn, saveVoiceOn, stopSpeaking } from './training/voice'
+import type { CustomerScreenId } from './data/customerApp'
 
 export type PageKey =
   | 'dashboard'
@@ -15,6 +16,7 @@ export type PageKey =
   | 'loyalty'
   | 'myClub'
   | 'training'
+  | 'customerApp'
   | 'settings'
 
 /** Where "Open in panel" lands: a page, a date range and any filters to pre-fill. */
@@ -77,6 +79,10 @@ interface Store {
   /** Refund is allowed for managers, or while a lesson grants it. */
   canRefund: boolean
 
+  /** Screen shown on the Customer App phone (guest view). */
+  customerScreen: CustomerScreenId
+  setCustomerScreen: (s: CustomerScreenId) => void
+
   tour: TourState | null
   setTour: (t: TourState | null) => void
   startTour: (packId: string, moduleId: string, lessonId?: string) => void
@@ -95,6 +101,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const [trainees, setTrainees] = useState<Trainee[]>(loadTrainees)
   const [activeTraineeId, setActiveTrainee] = useState<string | null>(null)
   const [tour, setTourState] = useState<TourState | null>(null)
+  const [customerScreen, setCustomerScreen] = useState<CustomerScreenId>('landing')
   // Lessons change demo data (e.g. a refund). Put it back when a tour ends so figures match the deck again.
   const setTour = useCallback((t: TourState | null) => {
     if (!t) setPayments(INITIAL_PAYMENTS)
@@ -210,11 +217,13 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       asManager,
       setAsManager,
       canRefund,
+      customerScreen,
+      setCustomerScreen,
       tour,
       setTour,
       startTour,
     }),
-    [page, period, setPeriod, timeSettingsOpen, openOrderId, payments, refundTarget, refund, closeOverlays, setTour, resetNonce, panelFilter, openInPanel, packs, trainees, activeTraineeId, addTrainee, completeModule, resetProgress, voiceOn, toggleVoice, asManager, canRefund, tour, startTour],
+    [page, period, setPeriod, timeSettingsOpen, openOrderId, payments, refundTarget, refund, closeOverlays, setTour, resetNonce, panelFilter, openInPanel, packs, trainees, activeTraineeId, addTrainee, completeModule, resetProgress, voiceOn, toggleVoice, asManager, canRefund, customerScreen, tour, startTour],
   )
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>

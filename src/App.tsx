@@ -3,6 +3,7 @@ import { OrderModal } from './components/OrderModal'
 import { RefundDialog } from './components/RefundDialog'
 import { Sidebar } from './components/Sidebar'
 import { TimeSettings } from './components/TimeSettings'
+import { CustomerApp } from './pages/CustomerApp'
 import { Dashboard } from './pages/Dashboard'
 import { Orders } from './pages/Orders'
 import { Payments } from './pages/Payments'
@@ -31,6 +32,7 @@ function Shell() {
         {page === 'payments' && <Payments />}
         {page === 'tableView' && <TableView />}
         {page === 'training' && <Training index={index ?? null} />}
+        {page === 'customerApp' && <CustomerApp />}
         {page === 'reviews' && <Placeholder title="Reviews" />}
         {page === 'reports' && <Placeholder title="Reports" />}
         {page === 'loyalty' && <Placeholder title="Loyalty" />}
