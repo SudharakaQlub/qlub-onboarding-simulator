@@ -46,8 +46,9 @@ Progress is stored per `packId/moduleId`, so don't rename ids after people have 
 | `page` | no | Navigate here when the step starts: `dashboard`, `orders`, `payments`, `tableView`, `training` |
 | `period` | no | Set the date range: `today`, `yesterday`, `thisWeek`, `last7`, `thisMonth`, `last30` |
 | `reset` | no | Close drawers/dialogs and clear filters. Use on the first step of each lesson |
+| `asManager` | no | Treat the trainee as a manager during this step (Refund is enabled). Staff logins can't refund otherwise |
 | `note` | no | Highlighted tip or common mistake |
-| `say` | no | What the voice assistant would say. "Listen" reads it aloud |
+| `say` | no | What the voice reads aloud when the step starts (falls back to title + instruction) |
 
 Tip: give the first step of every lesson `reset`, `page` and `period`, so the lesson also works when
 replayed alone from Ask a question.
@@ -79,7 +80,7 @@ Open the app with `?targets=1` to outline every target on screen with its id. Cu
 **Time Settings drawer:** `time-settings`, `time-option-today|yesterday|thisWeek|last7|thisMonth|last30|custom`,
 `time-confirm`
 
-**Dashboard:** `filter-qr`, `filter-products`, `kpi-row`, `kpi-revenue`, `kpi-tips`, `kpi-refunds`,
+**Dashboard:** `filter-qr`, `filter-products`, `kpi-row`, `payout-card`, `payout-toggle`, `payout-breakdown`, `payout-total`, `kpi-revenue`, `kpi-tips`, `kpi-refunds`,
 `kpi-dinerfee`, `kpi-vendorfee`, `chart-tabs`, `tab-revenue`, `tab-tips`, `chart-day-YYYY-MM-DD`,
 `card-split`, `popular-items`
 
@@ -87,21 +88,22 @@ Open the app with `?targets=1` to outline every target on screen with its id. Cu
 `orders-status-all|paid|partially-paid|voucher|loyalty`, `orders-table`, `orders-col-customer-paid`,
 `orders-col-status`, `order-row-<orderId>`, `order-details-<orderId>`
 
-**Order details:** `order-modal`, `order-payments`, `order-items`, `order-print`, `order-close`
+**Order details:** `order-modal`, `order-payments`, `order-remaining`, `order-items`, `order-print`, `order-close`
 
 **Payments:** `payments-search`, `payments-status-filter`, `payments-status-all|accepted|rejected|refunded`,
 `payments-table`, `payments-col-status`, `payments-col-method`, `payment-row-<paymentId>`,
 `payment-menu-<paymentId>`, `payment-print`, `payment-refund`
 
-**Refund dialog:** `refund-dialog`, `refund-amount`, `refund-confirm`
+**Refund dialog:** `refund-dialog`, `refund-amount`, `refund-partial`, `refund-confirm`
 
 **Table View:** `tableview-options`, `tableview-legend`, `table-tile-<orderId>`, `table-toggle-<orderId>`,
 `table-details-<orderId>`, `table-remaining-<orderId>`
 
-**Staff Training:** `who-card`, `name-input`, `name-continue`, `ask-box`, `ask-input`, `team-progress`
+**Staff Training:** `who-card`, `name-input`, `name-continue`, `ask-box`, `ask-input`, `ask-mic`, `ask-submit`,
+`ask-data-answer`, `ask-open-panel`, `team-progress`
 
 Demo order ids are in `src/data/demoVenue.ts` (e.g. `7159271922` = table 2, partially paid;
-`5551688701` = Table 1, Visa 4242).
+`5551688701` = Table 1, Visa 4242; `3018594687` and `6998006922` = part-paid bills from 25 Sep).
 
 ## Adding a new screen
 

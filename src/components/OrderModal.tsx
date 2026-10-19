@@ -1,11 +1,11 @@
-import { ORDERS } from '../data/demoVenue'
+import { summarize } from '../data/orders'
 import { money } from '../data/periods'
 import { useStore } from '../store'
 import { IconClose, IconDownload, IconPrint, IconQr } from './Icons'
 
 export function OrderModal() {
   const { openOrderId, setOpenOrderId, payments } = useStore()
-  const order = ORDERS.find((o) => o.id === openOrderId)
+  const order = summarize(payments).find((o) => o.id === openOrderId)
   if (!order) return null
   const pays = payments.filter((p) => p.orderId === order.id)
   const total = pays.reduce((s, p) => s + p.paid + p.tip + p.dinerFee, 0)
@@ -63,11 +63,21 @@ export function OrderModal() {
             </tbody>
           </table>
 
+          <div className="ticket-row remaining-row" data-tour="order-remaining">
+            <span className="muted">
+              Bill {money(order.bill)} · Paid {money(order.paid + order.loyalty)}
+            </span>
+            <b className={order.remaining > 0 ? 'owe-text' : 'ok'}>Remaining {money(order.remaining)}</b>
+          </div>
+
           <div className="order-details" data-tour="order-items">
             <div className="muted section-label">Order details</div>
             <div>
               <b>Table: {order.tableName}</b>
             </div>
+            {order.items.length === 0 && (
+              <div className="muted small">Item lines come from the POS and weren't captured for this order.</div>
+            )}
             {order.items.map((it, i) => (
               <div className="item-row" key={i}>
                 <span className="qty">{it.qty}x</span>

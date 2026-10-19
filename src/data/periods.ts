@@ -1,4 +1,4 @@
-import { CURRENCY, DEMO_NOW, VENDOR_FEE_RATE, type Payment } from './demoVenue'
+import { CURRENCY, DEMO_NOW, type Payment } from './demoVenue'
 
 export type PeriodKey = 'today' | 'yesterday' | 'thisWeek' | 'last7' | 'thisMonth' | 'last30' | 'custom'
 
@@ -92,18 +92,31 @@ export interface Figures {
   refunds: number
   dinerFee: number
   vendorFee: number
+  loyalty: number
+  /** qlub wallet payments are settled separately, so they're not in the receivable. */
+  wallet: number
+  /** What qlub pays the venue: ReceivableFromQlub in the export, less refunds. */
+  receivable: number
+  payments: number
+  orders: number
 }
 
 /** Revenue = card and wallet bill payments; loyalty credit and rejected payments are excluded. */
 export function figuresFor(payments: Payment[], p: Period): Figures {
   const ps = payments.filter((x) => inPeriod(x.time, p) && x.status !== 'Rejected')
+  const sum = (xs: Payment[], f: (x: Payment) => number) => round2(xs.reduce((s, x) => s + f(x), 0))
   const card = ps.filter((x) => x.method !== 'Loyalty')
-  const revenue = round2(card.reduce((s, x) => s + x.paid, 0))
+  const refunds = sum(ps, (x) => x.refunded)
   return {
-    revenue,
-    tips: round2(ps.reduce((s, x) => s + x.tip, 0)),
-    refunds: round2(ps.reduce((s, x) => s + x.refunded, 0)),
-    dinerFee: round2(ps.reduce((s, x) => s + x.dinerFee, 0)),
-    vendorFee: round2(revenue * VENDOR_FEE_RATE),
+    revenue: sum(card, (x) => x.paid),
+    tips: sum(ps, (x) => x.tip),
+    refunds,
+    dinerFee: sum(ps, (x) => x.dinerFee),
+    vendorFee: sum(ps, (x) => x.commission),
+    loyalty: sum(ps.filter((x) => x.method === 'Loyalty'), (x) => x.paid),
+    wallet: sum(ps.filter((x) => x.method === 'qlubcardwallet'), (x) => x.paid + x.tip - x.commission),
+    receivable: round2(sum(ps, (x) => x.receivable) - refunds),
+    payments: ps.length,
+    orders: new Set(ps.map((x) => x.orderId)).size,
   }
 }

@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
-import { IconCheck, IconClose } from '../components/Icons'
+import { IconCheck, IconClose, IconMic, IconMute, IconVolume } from '../components/Icons'
 import { useStore } from '../store'
 import { moduleKey } from './packs'
+import { speak, stopSpeaking, useListen } from './voice'
 
 interface Rect {
   top: number
@@ -13,19 +14,8 @@ interface Rect {
 const PAD = 6
 const CARD_W = 340
 
-function speak(text: string) {
-  try {
-    window.speechSynthesis.cancel()
-    const u = new SpeechSynthesisUtterance(text)
-    u.rate = 1.02
-    window.speechSynthesis.speak(u)
-  } catch {
-    /* speech not available */
-  }
-}
-
 export function TourOverlay() {
-  const { tour, setTour, packs, setPage, setPeriod, closeOverlays } = useStore()
+  const { tour, setTour, packs, setPage, setPeriod, closeOverlays, setAsManager, voiceOn, toggleVoice } = useStore()
   const pack = packs.find((p) => p.id === tour?.packId)
   const mod = pack?.modules.find((m) => m.id === tour?.moduleId)
   const steps = mod ? (tour?.lessonId ? mod.steps.filter((s) => s.lesson === tour.lessonId) : mod.steps) : []
@@ -35,11 +25,7 @@ export function TourOverlay() {
   const scrolledFor = useRef<string | null>(null)
 
   const exit = useCallback(() => {
-    try {
-      window.speechSynthesis.cancel()
-    } catch {
-      /* ignore */
-    }
+    stopSpeaking()
     setTour(null)
   }, [setTour])
 
@@ -60,11 +46,30 @@ export function TourOverlay() {
     if (step.reset) closeOverlays()
     if (step.page) setPage(step.page)
     if (step.period) setPeriod(step.period)
+    setAsManager(!!step.asManager)
     setRect(null)
     setMissing(false)
     scrolledFor.current = null
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [step?.id, tour?.packId, tour?.moduleId])
+
+  // Narrate each step as it starts.
+  useEffect(() => {
+    if (step && voiceOn) speak(step.say ?? `${step.title}. ${step.instruction}`)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [step?.id, voiceOn])
+
+  const [heard, setHeard] = useState<string | null>(null)
+  const mic = useListen((text) => {
+    const t = text.toLowerCase()
+    setHeard(text)
+    if (/\b(next|continue|done|okay|ok|go on)\b/.test(t)) next()
+    else if (/\b(back|previous)\b/.test(t)) back()
+    else if (/\b(repeat|again|what)\b/.test(t) && step) speak(step.say ?? step.instruction)
+    else if (/\b(stop|exit|quit|cancel)\b/.test(t)) exit()
+    else speak('Say next, back, repeat or stop. For other questions, use Ask a question.')
+  })
+  useEffect(() => setHeard(null), [step?.id])
 
   // Track the target element (it may appear after an animation or a page change).
   useLayoutEffect(() => {
@@ -110,6 +115,10 @@ export function TourOverlay() {
     document.addEventListener('click', onClick, true)
     return () => document.removeEventListener('click', onClick, true)
   }, [step, next])
+
+  useEffect(() => {
+    if (!tour || tour.phase !== 'steps') setAsManager(false)
+  }, [tour, setAsManager])
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -201,6 +210,8 @@ export function TourOverlay() {
         <p>{step.instruction}</p>
         {step.note && <div className="tour-note">{step.note}</div>}
         {missing && <div className="tour-note">Can't find this on screen. Press Next to continue.</div>}
+        {mic.listening && <div className="heard">Listening… say “next”, “back”, “repeat” or “stop”</div>}
+        {!mic.listening && heard && <div className="heard">Heard: “{heard}”</div>}
         <div className="tour-foot">
           <div className="dots">
             {steps.map((s, i) => (
@@ -208,9 +219,21 @@ export function TourOverlay() {
             ))}
           </div>
           <div className="row gap-s">
-            {step.say && (
-              <button className="btn btn-text small" onClick={() => speak(step.say!)} title="Read aloud">
-                Listen
+            <button
+              className={`icon-btn ${voiceOn ? 'on' : ''}`}
+              onClick={toggleVoice}
+              title={voiceOn ? 'Voice on: steps are read aloud' : 'Voice off'}
+              data-testid="voice-toggle"
+            >
+              {voiceOn ? <IconVolume size={15} /> : <IconMute size={15} />}
+            </button>
+            {mic.supported && (
+              <button
+                className={`icon-btn ${mic.listening ? 'listening' : ''}`}
+                onClick={mic.listening ? mic.stop : mic.start}
+                title="Say next, back, repeat or stop"
+              >
+                <IconMic size={15} />
               </button>
             )}
             {tour.stepIndex > 0 && (
@@ -233,12 +256,16 @@ export function TourOverlay() {
 }
 
 function Checks({ exit }: { exit: () => void }) {
-  const { tour, setTour, packs, completeModule } = useStore()
+  const { tour, setTour, packs, completeModule, voiceOn } = useStore()
   const pack = packs.find((p) => p.id === tour?.packId)
   const mod = pack?.modules.find((m) => m.id === tour?.moduleId)
 
   const t = tour!
   const q = mod!.checks[t.checkIndex]
+  useEffect(() => {
+    if (voiceOn) speak(q.question)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
   const [picked, setPicked] = useState<number | null>(null)
   const [wrongOnce, setWrongOnce] = useState(false)
   const right = picked === q.answer

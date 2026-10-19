@@ -3,7 +3,7 @@ import { IconChevron, IconInfo } from '../components/Icons'
 import { RevenueChart } from '../components/RevenueChart'
 import { TopBar } from '../components/TopBar'
 import { POPULAR_ITEMS } from '../data/demoVenue'
-import { businessDay, daysOf, figuresFor, money, PERIOD_LABELS, round2, shortDay } from '../data/periods'
+import { businessDay, daysOf, figuresFor, money, PERIOD_LABELS, round2, shortDay, type Figures } from '../data/periods'
 import { useStore } from '../store'
 
 const KPI_HELP: Record<string, string> = {
@@ -15,13 +15,15 @@ const KPI_HELP: Record<string, string> = {
 }
 
 export function Dashboard() {
-  const { period, payments } = useStore()
+  const { period, payments, panelFilter } = useStore()
   const [tab, setTab] = useState<'revenue' | 'tips'>('revenue')
   const label = PERIOD_LABELS[period.key]
   const f = figuresFor(payments, period)
   const days = useMemo(() => daysOf(period), [period])
-  const [selected, setSelected] = useState(days[days.length - 1])
-  useEffect(() => setSelected(days[days.length - 1]), [days])
+  const pick = () => (panelFilter.day && days.includes(panelFilter.day) ? panelFilter.day : days[days.length - 1])
+  const [selected, setSelected] = useState(pick)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => setSelected(pick()), [days])
 
   const series = days.map((day) => {
     const ps = payments.filter((p) => businessDay(p.time) === day && p.status !== 'Rejected')
@@ -65,6 +67,8 @@ export function Dashboard() {
           {kpi('Diner Fee', f.dinerFee, 'kpi-dinerfee')}
           {kpi('Vendor Fee', f.vendorFee, 'kpi-vendorfee')}
         </div>
+
+        <Payout f={f} label={label} startOpen={!!panelFilter.payoutOpen} />
 
         <div className="card chart-card">
           <div className="chart-main">
@@ -123,5 +127,49 @@ export function Dashboard() {
         </div>
       </div>
     </>
+  )
+}
+
+/** Training addition: the real panel has no Payouts page, so this shows the estimate staff are taught. */
+function Payout({ f, label, startOpen }: { f: Figures; label: string; startOpen: boolean }) {
+  const [open, setOpen] = useState(startOpen)
+  const line = (name: string, v: number, sign: '' | '+' | '−', tour?: string) => (
+    <div className="payout-line" data-tour={tour}>
+      <span>
+        {sign && <i>{sign}</i>}
+        {name}
+      </span>
+      <span>{money(v)}</span>
+    </div>
+  )
+  return (
+    <div className="card payout" data-tour="payout-card">
+      <button className="payout-head" onClick={() => setOpen((v) => !v)} data-tour="payout-toggle">
+        <div>
+          <div className="kpi-label">Estimated payout {label}</div>
+          <div className="kpi-value">{money(f.receivable)}</div>
+        </div>
+        <span className="muted small">{open ? 'Hide' : 'How it adds up'}</span>
+      </button>
+      {open && (
+        <div className="payout-body" data-tour="payout-breakdown">
+          {line('Revenue (card & wallet)', f.revenue, '')}
+          {line('Tips', f.tips, '+')}
+          {line('Loyalty credit redeemed', f.loyalty, '+')}
+          {line('Vendor Fee (qlub commission)', f.vendorFee, '−')}
+          {f.refunds > 0 && line('Refunds', f.refunds, '−')}
+          {f.wallet > 0 && line('qlub wallet payments (settled separately)', f.wallet, '−')}
+          <div className="payout-line excluded">
+            <span>Diner Fee: paid by guests to qlub, not part of the payout</span>
+            <span>{money(f.dinerFee)}</span>
+          </div>
+          <div className="payout-line total" data-tour="payout-total">
+            <span>Receivable from qlub</span>
+            <span>{money(f.receivable)}</span>
+          </div>
+          <p className="muted tiny">Matches the ReceivableFromQlub column of the transactions export. Settlement dates: confirm with Finance.</p>
+        </div>
+      )}
+    </div>
   )
 }

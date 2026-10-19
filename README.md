@@ -22,16 +22,21 @@ npm start          # serve dist/ on $PORT (used by Railway)
    Steps advance when you click the highlighted item (or press Next on "read this" steps).
 3. After each module: check questions from the training deck. A wrong answer explains and lets you retry.
 4. Back on Staff Training the module is ticked, and **Team progress** (manager view) updates.
-5. Pick **Ali** (already trained): the page leads with **Ask a question**. Type "guest wants money back"
-   → "How do I refund a guest?" → **Show me on the panel** replays just the refund lesson.
-6. "Reset demo progress" under Team progress restores the seeded staff.
+5. Pick **Ali** (already trained): the page leads with **Ask a question**. Type or say "how do I refund a guest"
+   → **Show me on the panel** replays just the refund lesson.
+6. Ask about the venue's numbers: "Which tables still owe money?", "What will we be paid for the last 30 days?",
+   "Payments from the card ending 4242". Each answer has a button that opens the panel on the matching filtered screen.
+7. "Reset demo progress" under Team progress restores the seeded staff.
 
 ## How it's built
 
 - React 18 + TypeScript + Vite. No backend; progress is kept in the browser (localStorage).
-- `src/pages/*`: mock Vendor Panel screens (Dashboard, Orders, Payments, Table View) on demo data in
-  `src/data/demoVenue.ts`. Last 30 Days figures match the training deck ($2,001.79 revenue, $185.55 tips,
-  $48.70 diner fee, $57.54 vendor fee).
+- `src/pages/*`: mock Vendor Panel screens (Dashboard, Orders, Payments, Table View). Data in `src/data/demoVenue.ts`
+  is the demo venue's real transactions export (22 rows, 19 Sep – 19 Oct): $2,001.79 revenue, $185.55 tips, $48.70 diner
+  fee, $57.54 vendor fee, $2,152.62 receivable from qlub. Lessons that change data (a refund) are undone when the tour ends.
+- `src/training/venueAnswers.ts`: rule-based answers about the venue's numbers (no AI). The voice agent can reuse them as tools.
+- `src/training/voice.ts`: browser voice. Steps and answers are read aloud (toggle with the speaker icon); the mic
+  works in Chrome, Edge and Safari for names, questions and "next / back / repeat / stop" during a lesson.
 - `src/training/TourOverlay.tsx`: the guided-tour engine (spotlight, step card, click-to-advance, checks).
 - `public/packs/*`: **training content as JSON**. The app loads every pack listed in `public/packs/index.json`.
 
@@ -56,7 +61,7 @@ Railway settings: build `npm ci && npm run build`, start `npm start` (it binds t
 
 ## Not done yet
 
-- Voice agent (speech in/out + Claude). Steps already carry a `say` line, and "Listen" reads it aloud
-  with the browser's voice as a placeholder.
+- AI voice agent: free-form questions answered by Claude, and a natural hosted voice. Browser voice and the
+  rule-based answers cover the demo.
 - The refund dialog is a concept screen (the real one wasn't captured; needs a manager login).
 - Payout formula and Table View colours still need Finance / Product confirmation (flagged in the steps).

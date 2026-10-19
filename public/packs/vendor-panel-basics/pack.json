@@ -3,8 +3,8 @@
   "title": "Vendor Panel basics",
   "product": "Vendor Panel",
   "market": "AU",
-  "version": "1.0.0",
-  "description": "Dashboard, orders and payments, step by step on the demo venue. From Rohan's Vendor Panel Training Plan.",
+  "version": "1.1.0",
+  "description": "Dashboard, orders and payments, step by step on the demo venue's real transactions export (19 Sep – 19 Oct). From Rohan's Vendor Panel Training Plan.",
   "modules": [
     {
       "id": "dashboard",
@@ -154,15 +154,34 @@
         {
           "id": "1C.1",
           "lesson": "1C",
-          "title": "Calculate the payout",
-          "instruction": "Payout = Revenue + Tips − Refunds − Vendor Fee. For the last 30 days: $2,001.79 + $185.55 − $0.00 − $57.54 = $2,129.80.",
-          "target": "kpi-row",
-          "advance": "next",
+          "title": "Open the payout",
+          "instruction": "Click “How it adds up” to see what qlub will pay the venue for the period.",
+          "target": "payout-toggle",
+          "advance": "click",
           "page": "dashboard",
           "period": "last30",
           "reset": true,
-          "note": "The Diner Fee goes to qlub, so it's never part of the payout. Settlement timing: confirm with Finance.",
-          "say": "Payout is revenue plus tips, minus refunds and the vendor fee."
+          "say": "Let's work out the payout. Open the breakdown."
+        },
+        {
+          "id": "1C.2",
+          "lesson": "1C",
+          "title": "How it adds up",
+          "instruction": "Payout = Revenue + Tips + Loyalty credit − Vendor Fee − Refunds. Last 30 days: $2,001.79 + $185.55 + $28.32 − $57.54 = $2,158.12.",
+          "target": "payout-breakdown",
+          "advance": "next",
+          "note": "The Diner Fee goes to qlub, so it's never part of the payout. Payments by qlub wallet ($5.50 here) are settled separately.",
+          "say": "Revenue plus tips plus loyalty credit, minus the vendor fee and any refunds. The diner fee goes to qlub."
+        },
+        {
+          "id": "1C.3",
+          "lesson": "1C",
+          "title": "What qlub pays the venue",
+          "instruction": "Receivable from qlub: $2,152.62 for the last 30 days. It matches the transactions export.",
+          "target": "payout-total",
+          "advance": "next",
+          "note": "Settlement dates: confirm with Finance.",
+          "say": "For the last thirty days, qlub owes the venue two thousand one hundred and fifty-two dollars and sixty-two cents."
         }
       ],
       "checks": [
@@ -197,14 +216,14 @@
           "explain": "Right. Tap 29 Sep on the chart and the card split shows Mastercard $30.50."
         },
         {
-          "question": "Revenue $500, Tips $40, Refunds $20, Vendor Fee $14. What's the payout?",
+          "question": "Revenue $500, Tips $40, Refunds $20, Vendor Fee $14, no loyalty credit. What's the payout?",
           "options": [
             "$520",
             "$506",
             "$546"
           ],
           "answer": 1,
-          "explain": "Right. 500 + 40 − 20 − 14 = $506."
+          "explain": "Right. 500 + 40 − 20 − 14 = $506. The diner fee isn't added: it goes to qlub."
         }
       ]
     },
@@ -314,6 +333,14 @@
           "title": "Each payment",
           "instruction": "Top: every payment with time, tip, method, last 4 digits and status. Split bills show one line per guest.",
           "target": "order-payments",
+          "advance": "next"
+        },
+        {
+          "id": "2C.2b",
+          "lesson": "2C",
+          "title": "What's left to pay",
+          "instruction": "Remaining is what the table still owes: $169.20 on this bill.",
+          "target": "order-remaining",
           "advance": "next"
         },
         {
@@ -460,7 +487,7 @@
           "id": "3A.3",
           "lesson": "3A",
           "title": "Search",
-          "instruction": "Search by order ID, or match the last 4 digits of the guest's card. Try typing 4242.",
+          "instruction": "Search by order ID, the card's last 4 digits, the card brand or the amount. Try typing 4242.",
           "target": "payments-search",
           "advance": "next"
         },
@@ -482,7 +509,8 @@
           "advance": "next",
           "page": "payments",
           "period": "last30",
-          "reset": true
+          "reset": true,
+          "asManager": true
         },
         {
           "id": "3B.2",
@@ -490,7 +518,8 @@
           "title": "Open the menu",
           "instruction": "Click ⋮ at the end of the row.",
           "target": "payment-menu-5551688701",
-          "advance": "click"
+          "advance": "click",
+          "asManager": true
         },
         {
           "id": "3B.3",
@@ -499,16 +528,18 @@
           "instruction": "Click Refund. (Print gives a receipt instead.)",
           "target": "payment-refund",
           "advance": "click",
-          "note": "Refund greyed out? It needs refund permission. Ask a manager who has it."
+          "note": "For this lesson you're signed in as a manager. On a staff login Refund is greyed out: ask a manager with refund access.",
+          "asManager": true
         },
         {
           "id": "3B.4",
           "lesson": "3B",
           "title": "Enter the amount",
-          "instruction": "Enter how much to refund. You can refund part of a payment.",
+          "instruction": "Choose Full, or Partial and enter an amount.",
           "target": "refund-amount",
           "advance": "next",
-          "note": "Concept screen: the real dialog still needs capturing with a manager login."
+          "note": "Concept screen: the real dialog still needs capturing with a manager login.",
+          "asManager": true
         },
         {
           "id": "3B.5",
@@ -516,7 +547,8 @@
           "title": "Confirm",
           "instruction": "Click Refund to confirm.",
           "target": "refund-confirm",
-          "advance": "click"
+          "advance": "click",
+          "asManager": true
         },
         {
           "id": "3B.6",
@@ -524,7 +556,8 @@
           "title": "Done",
           "instruction": "The status changes to Refunded, and the Dashboard's Refunds figure goes up.",
           "target": "payment-row-5551688701",
-          "advance": "next"
+          "advance": "next",
+          "asManager": true
         }
       ],
       "checks": [
@@ -533,7 +566,7 @@
           "options": [
             "5551688701, $131.90",
             "7159271922, $5.89",
-            "3200850479, $123.02"
+            "3200850272, $123.02"
           ],
           "answer": 0,
           "explain": "Right. Search 4242 and pick the 16 Oct row: order 5551688701, $131.90."
@@ -601,7 +634,7 @@
     },
     {
       "q": "How is the payout calculated?",
-      "a": "Payout = Revenue + Tips − Refunds − Vendor Fee. The Diner Fee goes to qlub. Settlement timing: check with Finance.",
+      "a": "Revenue + Tips + Loyalty credit − Vendor Fee − Refunds. The Diner Fee goes to qlub. The Dashboard's Estimated payout card shows the breakdown; settlement dates: check with Finance.",
       "lesson": "dashboard/1C",
       "keywords": [
         "payout",

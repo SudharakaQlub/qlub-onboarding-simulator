@@ -3,6 +3,7 @@ import { INITIAL_PAYMENTS, type Payment } from './data/demoVenue'
 import { periodFor, round2, type Period, type PeriodKey } from './data/periods'
 import { loadTrainees, resetTrainees, saveTrainees, type Completion, type Trainee } from './training/progress'
 import type { TrainingPack } from './training/types'
+import { loadVoiceOn, saveVoiceOn, stopSpeaking } from './training/voice'
 
 export type PageKey =
   | 'dashboard'
@@ -15,6 +16,17 @@ export type PageKey =
   | 'myClub'
   | 'training'
   | 'settings'
+
+/** Where "Open in panel" lands: a page, a date range and any filters to pre-fill. */
+export interface PanelPreset {
+  page: PageKey
+  period?: { key: PeriodKey; start?: string; end?: string }
+  paymentsQuery?: string
+  ordersStatus?: 'All' | 'Paid' | 'Partially Paid' | 'Loyalty'
+  orderId?: string
+  payoutOpen?: boolean
+  day?: string
+}
 
 export interface TourState {
   packId: string
@@ -41,6 +53,9 @@ interface Store {
   setRefundTarget: (id: string | null) => void
   refund: (paymentId: string, amount: number) => void
   closeOverlays: () => void
+  /** Filters the current page should start with (set by Open in panel). */
+  panelFilter: Omit<PanelPreset, 'page' | 'period'>
+  openInPanel: (p: PanelPreset) => void
   /** Bumps when overlays are reset, so pages remount with fresh filters. */
   resetNonce: number
 
@@ -52,6 +67,15 @@ interface Store {
   addTrainee: (name: string) => string
   completeModule: (key: string, c: Completion) => void
   resetProgress: () => void
+
+  /** Narrate training steps and answers aloud. */
+  voiceOn: boolean
+  toggleVoice: () => void
+  /** True while a training step needs manager rights. */
+  asManager: boolean
+  setAsManager: (v: boolean) => void
+  /** Refund is allowed for managers, or while a lesson grants it. */
+  canRefund: boolean
 
   tour: TourState | null
   setTour: (t: TourState | null) => void
@@ -70,8 +94,23 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const [packs, setPacks] = useState<TrainingPack[]>([])
   const [trainees, setTrainees] = useState<Trainee[]>(loadTrainees)
   const [activeTraineeId, setActiveTrainee] = useState<string | null>(null)
-  const [tour, setTour] = useState<TourState | null>(null)
+  const [tour, setTourState] = useState<TourState | null>(null)
+  // Lessons change demo data (e.g. a refund). Put it back when a tour ends so figures match the deck again.
+  const setTour = useCallback((t: TourState | null) => {
+    if (!t) setPayments(INITIAL_PAYMENTS)
+    setTourState(t)
+  }, [])
   const [resetNonce, setResetNonce] = useState(0)
+  const [asManager, setAsManager] = useState(false)
+  const [voiceOn, setVoiceOn] = useState(loadVoiceOn)
+  const toggleVoice = useCallback(() => {
+    setVoiceOn((v) => {
+      if (v) stopSpeaking()
+      saveVoiceOn(!v)
+      return !v
+    })
+  }, [])
+  const [panelFilter, setPanelFilter] = useState<Omit<PanelPreset, 'page' | 'period'>>({})
 
   const setPeriod = useCallback((key: PeriodKey, custom?: { start: string; end: string }) => {
     setPeriodState(periodFor(key, custom))
@@ -90,7 +129,19 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     setOpenOrderId(null)
     setRefundTarget(null)
     setResetNonce((n) => n + 1)
+    setPanelFilter({})
   }, [])
+
+  const openInPanel = useCallback(
+    ({ page: target, period: p, ...filter }: PanelPreset) => {
+      closeOverlays()
+      if (p) setPeriodState(periodFor(p.key, p.start && p.end ? { start: p.start, end: p.end } : undefined))
+      setPanelFilter(filter)
+      setPage(target)
+      if (filter.orderId) setOpenOrderId(filter.orderId)
+    },
+    [closeOverlays],
+  )
 
   const updateTrainees = useCallback((fn: (t: Trainee[]) => Trainee[]) => {
     setTrainees((prev) => {
@@ -126,6 +177,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     setTour({ packId, moduleId, lessonId, stepIndex: 0, phase: 'steps', checkIndex: 0, firstTryRight: 0 })
   }, [])
 
+  const canRefund = asManager || trainees.find((t) => t.id === activeTraineeId)?.role === 'Manager'
+
   const value = useMemo<Store>(
     () => ({
       page,
@@ -142,6 +195,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       refund,
       closeOverlays,
       resetNonce,
+      panelFilter,
+      openInPanel,
       packs,
       setPacks,
       trainees,
@@ -150,11 +205,16 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       addTrainee,
       completeModule,
       resetProgress,
+      voiceOn,
+      toggleVoice,
+      asManager,
+      setAsManager,
+      canRefund,
       tour,
       setTour,
       startTour,
     }),
-    [page, period, setPeriod, timeSettingsOpen, openOrderId, payments, refundTarget, refund, closeOverlays, resetNonce, packs, trainees, activeTraineeId, addTrainee, completeModule, resetProgress, tour, startTour],
+    [page, period, setPeriod, timeSettingsOpen, openOrderId, payments, refundTarget, refund, closeOverlays, setTour, resetNonce, panelFilter, openInPanel, packs, trainees, activeTraineeId, addTrainee, completeModule, resetProgress, voiceOn, toggleVoice, asManager, canRefund, tour, startTour],
   )
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>

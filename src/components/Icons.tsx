@@ -92,3 +92,9 @@ export const IconPlay = (p: P) => (
 export const IconMic = (p: P) => (
   <svg {...base(p)}><rect x="9" y="3" width="6" height="11" rx="3" /><path d="M5 11a7 7 0 0 0 14 0M12 18v3" /></svg>
 )
+export const IconVolume = (p: P) => (
+  <svg {...base(p)}><path d="M11 5 6 9H3v6h3l5 4V5z" /><path d="M15.5 8.5a5 5 0 0 1 0 7M18.5 5.5a9 9 0 0 1 0 13" /></svg>
+)
+export const IconMute = (p: P) => (
+  <svg {...base(p)}><path d="M11 5 6 9H3v6h3l5 4V5z" /><path d="m22 9-6 6M16 9l6 6" /></svg>
+)

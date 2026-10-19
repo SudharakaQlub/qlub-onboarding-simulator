@@ -1,15 +1,29 @@
 import { useEffect, useState } from 'react'
 import { IconChevron, IconDots, IconPrint, IconQr, IconRefresh, IconRefund, IconSearch } from '../components/Icons'
 import { TopBar } from '../components/TopBar'
-import { ORDERS } from '../data/demoVenue'
+import { ORDERS, type Payment } from '../data/demoVenue'
 import { formatDateTime, inPeriod, money } from '../data/periods'
 import { useStore } from '../store'
 
 const STATUSES = ['All', 'Accepted', 'Rejected', 'Refunded'] as const
 
+/** Order ID, last 4 digits, card brand ("visa") or an amount ("131.90", "$131.90"). */
+export function matches(p: Payment, raw: string) {
+  const q = raw.trim().toLowerCase()
+  if (!q) return true
+  if (p.orderId.includes(q) || p.last4 === q) return true
+  if (q.length >= 3 && p.method.toLowerCase().includes(q)) return true
+  if (/^\$?\s*[\d.,]+$/.test(q)) {
+    const v = parseFloat(q.replace(/[$,\s]/g, ''))
+    const near = (x: number) => Math.abs(x - v) < 0.006
+    return !isNaN(v) && (near(p.paid) || near(p.paid + p.tip + p.dinerFee))
+  }
+  return false
+}
+
 export function Payments() {
-  const { payments, period, setRefundTarget } = useStore()
-  const [q, setQ] = useState('')
+  const { payments, period, setRefundTarget, canRefund, panelFilter } = useStore()
+  const [q, setQ] = useState(panelFilter.paymentsQuery ?? '')
   const [status, setStatus] = useState<(typeof STATUSES)[number]>('All')
   const [statusOpen, setStatusOpen] = useState(false)
   const [menuFor, setMenuFor] = useState<string | null>(null)
@@ -22,7 +36,7 @@ export function Payments() {
 
   const rows = payments
     .filter((p) => inPeriod(p.time, period))
-    .filter((p) => !q || p.orderId.includes(q.trim()) || p.last4 === q.trim())
+    .filter((p) => matches(p, q))
     .filter((p) => status === 'All' || p.status === status)
     .sort((a, b) => b.time.localeCompare(a.time))
 
@@ -40,7 +54,7 @@ export function Payments() {
         <div className="filters">
           <label className="input-wrap grow" data-tour="payments-search">
             <IconSearch size={15} />
-            <input placeholder="Search by order id or last 4 digits" value={q} onChange={(e) => setQ(e.target.value)} />
+            <input placeholder="Search by order id, last 4 digits, card or amount" value={q} onChange={(e) => setQ(e.target.value)} />
           </label>
           <div className="dropdown">
             <button
@@ -135,7 +149,8 @@ export function Payments() {
                           <button
                             className="btn btn-danger-soft"
                             data-tour="payment-refund"
-                            disabled={p.status !== 'Accepted' || p.method === 'Loyalty'}
+                            disabled={!canRefund || p.status !== 'Accepted' || p.method === 'Loyalty'}
+                            title={canRefund ? undefined : 'Needs refund access. Ask a manager.'}
                             onClick={() => {
                               setMenuFor(null)
                               setRefundTarget(p.id)
@@ -151,6 +166,10 @@ export function Payments() {
               })}
             </tbody>
           </table>
+          <div className="table-foot muted small">
+            {rows.length} payment{rows.length === 1 ? '' : 's'}
+            {!canRefund && ' · Refunds need a manager login'}
+          </div>
         </div>
       </div>
     </>

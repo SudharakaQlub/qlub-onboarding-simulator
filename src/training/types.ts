@@ -22,6 +22,8 @@ export interface TrainingStep {
   reset?: boolean
   /** Set the panel's date range when the step starts, so the screen has data to show. */
   period?: PeriodKey
+  /** Act as a manager during this step (e.g. so Refund is enabled). */
+  asManager?: boolean
   /** Highlighted tip, e.g. a common mistake. */
   note?: string
   /** What the assistant would say aloud (used by the voice agent later). */

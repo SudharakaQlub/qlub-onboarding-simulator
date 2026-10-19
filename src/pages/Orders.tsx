@@ -9,10 +9,10 @@ const STATUSES = ['All', 'Paid', 'Partially Paid', 'Voucher', 'Loyalty'] as cons
 type StatusFilter = (typeof STATUSES)[number]
 
 export function Orders() {
-  const { payments, period, setOpenOrderId } = useStore()
+  const { payments, period, setOpenOrderId, panelFilter } = useStore()
   const [table, setTable] = useState('')
-  const [orderId, setOrderId] = useState('')
-  const [status, setStatus] = useState<StatusFilter>('All')
+  const [orderId, setOrderId] = useState(panelFilter.orderId ?? '')
+  const [status, setStatus] = useState<StatusFilter>(panelFilter.ordersStatus ?? 'All')
   const [statusOpen, setStatusOpen] = useState(false)
 
   const rows = summarize(payments)

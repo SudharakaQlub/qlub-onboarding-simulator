@@ -1,5 +1,7 @@
 import { useMemo, useState } from 'react'
-import { IconCheck, IconMic, IconPlay, IconSearch } from '../components/Icons'
+import { IconCheck, IconMic, IconMute, IconPlay, IconSearch, IconVolume } from '../components/Icons'
+import { answerVenue, DATA_QUESTIONS } from '../training/venueAnswers'
+import { speak, useListen } from '../training/voice'
 import { TopBar } from '../components/TopBar'
 import { moduleKey } from '../training/packs'
 import type { Faq, TrainingPack } from '../training/types'
@@ -25,8 +27,9 @@ function WhoIsTraining() {
   const { trainees, setActiveTrainee, addTrainee, packs } = useStore()
   const [name, setName] = useState('')
   const total = packs.reduce((s, p) => s + p.modules.length, 0)
-  const submit = () => {
-    const n = name.trim()
+  const mic = useListen((t) => submit(t))
+  const submit = (spoken?: string) => {
+    const n = (spoken ?? name).trim().replace(/^(i am|i'm|it's|my name is|this is)\s+/i, '').replace(/[.!]$/, '')
     if (!n) return
     const found = trainees.find((t) => t.name.toLowerCase() === n.toLowerCase())
     setActiveTrainee(found ? found.id : addTrainee(n))
@@ -37,7 +40,7 @@ function WhoIsTraining() {
       <div className="hero-text">
         <div className="eyebrow">ONBOARDING SIMULATOR</div>
         <h2>Who's training today?</h2>
-        <p className="muted">No login needed. Type your name and we'll pick up where you left off.</p>
+        <p className="muted">No login needed. Type or say your name and we'll pick up where you left off.</p>
         <form
           className="name-form"
           onSubmit={(e) => {
@@ -55,9 +58,16 @@ function WhoIsTraining() {
           <button className="btn btn-primary" type="submit" data-tour="name-continue">
             Continue
           </button>
-          <button type="button" className="btn btn-outline mic" disabled title="Voice sign-in comes with the voice agent">
-            <IconMic size={16} />
-          </button>
+          {mic.supported && (
+            <button
+              type="button"
+              className={`btn btn-outline mic ${mic.listening ? 'listening' : ''}`}
+              onClick={mic.listening ? mic.stop : mic.start}
+              title="Say your name"
+            >
+              <IconMic size={16} />
+            </button>
+          )}
         </form>
         <div className="staff-chips">
           {trainees.map((t) => {
@@ -147,21 +157,37 @@ function PersonalPlan() {
   )
 }
 
+const STOP = new Set(['the', 'and', 'how', 'what', 'did', 'does', 'was', 'were', 'are', 'can', 'for', 'our', 'this', 'that', 'last', 'week', 'month', 'days', 'with', 'from', 'will', 'have', 'has', 'get', 'see', 'you', 'they', 'their', 'who', 'which', 'why', 'when', 'today', 'yesterday', 'much', 'many'])
+
 function score(f: Faq, q: string) {
-  const words = q.toLowerCase().split(/\W+/).filter((w) => w.length > 2)
+  const words = q.toLowerCase().split(/\W+/).filter((w) => w.length > 2 && !STOP.has(w))
   if (!words.length) return 0
   const hay = `${f.q} ${f.a} ${(f.keywords ?? []).join(' ')}`.toLowerCase()
   return words.reduce((s, w) => s + (hay.includes(w) ? 1 : 0), 0)
 }
 
 function AskBox({ highlight }: { highlight: boolean }) {
-  const { packs, startTour } = useStore()
+  const { packs, startTour, payments, openInPanel, voiceOn, toggleVoice } = useStore()
   const [q, setQ] = useState('')
+  const [asked, setAsked] = useState('')
   const [picked, setPicked] = useState<{ f: Faq; pack: TrainingPack } | null>(null)
   const all = useMemo(() => packs.flatMap((pack) => pack.faqs.map((f) => ({ f, pack }))), [packs])
-  const results = q.trim()
-    ? all.map((x) => ({ ...x, s: score(x.f, q) })).filter((x) => x.s > 0).sort((a, b) => b.s - a.s).slice(0, 5)
-    : all.slice(0, 6).map((x) => ({ ...x, s: 0 }))
+  const venue = useMemo(() => (asked ? answerVenue(asked, payments) : null), [asked, payments])
+  const results = asked
+    ? all.map((x) => ({ ...x, s: score(x.f, asked) })).filter((x) => x.s > 0).sort((a, b) => b.s - a.s).slice(0, venue ? 3 : 5)
+    : []
+
+  const ask = (text: string) => {
+    const t = text.trim()
+    setQ(t)
+    setAsked(t)
+    setPicked(null)
+    if (!t) return
+    const v = answerVenue(t, payments)
+    const top = all.map((x) => ({ ...x, s: score(x.f, t) })).sort((a, b) => b.s - a.s)[0]
+    if (voiceOn) speak(v ? v.text : top && top.s > 0 ? top.f.a : 'I don\u2019t have an answer for that yet. Ask your manager.')
+  }
+  const mic = useListen(ask)
 
   const show = (x: { f: Faq; pack: TrainingPack }) => {
     if (!x.f.lesson) return
@@ -171,21 +197,48 @@ function AskBox({ highlight }: { highlight: boolean }) {
 
   return (
     <div className={`card ask ${highlight ? 'glow' : ''}`} data-tour="ask-box">
-      <h3>Ask a question</h3>
-      <p className="muted small">Type it the way you'd say it. Voice is coming next.</p>
-      <label className="input-wrap">
+      <div className="card-head tight">
+        <h3>Ask a question</h3>
+        <button className="icon-btn" onClick={toggleVoice} title={voiceOn ? 'Answers are read aloud' : 'Voice off'}>
+          {voiceOn ? <IconVolume size={16} /> : <IconMute size={16} />}
+        </button>
+      </div>
+      <p className="muted small">How to do something, or this venue's numbers: takings, tips, payouts, a guest's card, tables that still owe.</p>
+      <form
+        className="input-wrap"
+        onSubmit={(e) => {
+          e.preventDefault()
+          ask(q)
+        }}
+      >
         <IconSearch size={15} />
         <input
-          placeholder="e.g. How do I refund a guest?"
+          placeholder="e.g. Which tables still owe money?"
           value={q}
           onChange={(e) => {
             setQ(e.target.value)
-            setPicked(null)
+            if (!e.target.value) setAsked('')
           }}
           data-tour="ask-input"
         />
-        <IconMic size={16} className="muted" />
-      </label>
+        {mic.supported && (
+          <button
+            type="button"
+            className={`icon-btn ${mic.listening ? 'listening' : ''}`}
+            onClick={mic.listening ? mic.stop : mic.start}
+            title="Ask by voice"
+            data-tour="ask-mic"
+          >
+            <IconMic size={16} />
+          </button>
+        )}
+        <button type="submit" className="btn btn-primary small" data-tour="ask-submit">
+          Ask
+        </button>
+      </form>
+      {mic.listening && <div className="heard">Listening… ask your question</div>}
+      {mic.error && <div className="heard">{mic.error}</div>}
+
       {picked ? (
         <div className="answer">
           <div className="answer-q">{picked.f.q}</div>
@@ -202,16 +255,63 @@ function AskBox({ highlight }: { highlight: boolean }) {
           </div>
         </div>
       ) : (
-        <div className="faq-list">
-          {!q.trim() && <div className="eyebrow">TOP QUESTIONS</div>}
-          {results.length === 0 && <p className="muted small">No match yet. Ask your manager, or try other words.</p>}
-          {results.map((x, i) => (
-            <button key={i} className="faq" onClick={() => setPicked(x)} data-tour={i === 0 ? 'ask-first-result' : undefined}>
-              {x.f.q}
-            </button>
-          ))}
-        </div>
+        <>
+          {venue && (
+            <div className="answer data" data-tour="ask-data-answer">
+              <div className="eyebrow">FROM THIS VENUE'S DATA</div>
+              <p>{venue.text}</p>
+              {venue.lines && (
+                <div className="answer-lines">
+                  {venue.lines.map(([a, b], i) => (
+                    <div key={i}>
+                      <span>{a}</span>
+                      <b>{b}</b>
+                    </div>
+                  ))}
+                </div>
+              )}
+              {venue.note && <p className="muted small">{venue.note}</p>}
+              {venue.open && (
+                <div className="row gap">
+                  <button className="btn btn-primary small" onClick={() => openInPanel(venue.open!)} data-tour="ask-open-panel">
+                    <IconPlay size={12} /> {venue.open.label}
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
+          <div className="faq-list">
+            {asked && results.length > 0 && <div className="eyebrow">{venue ? 'RELATED HOW-TOS' : 'HOW-TOS'}</div>}
+            {asked && !venue && results.length === 0 && (
+              <p className="muted small">I don't have an answer for that yet. Try other words, or ask your manager.</p>
+            )}
+            {results.map((x, i) => (
+              <button key={i} className="faq" onClick={() => setPicked(x)} data-tour={i === 0 ? 'ask-first-result' : undefined}>
+                {x.f.q}
+              </button>
+            ))}
+            {!asked && (
+              <>
+                <div className="eyebrow">HOW DO I…</div>
+                {all.slice(0, 4).map((x, i) => (
+                  <button key={i} className="faq" onClick={() => setPicked(x)} data-tour={i === 0 ? 'ask-first-result' : undefined}>
+                    {x.f.q}
+                  </button>
+                ))}
+                <div className="eyebrow" style={{ marginTop: 6 }}>THIS VENUE'S NUMBERS</div>
+                <div className="chips">
+                  {DATA_QUESTIONS.map((d) => (
+                    <button key={d} className="suggest" onClick={() => ask(d)}>
+                      {d}
+                    </button>
+                  ))}
+                </div>
+              </>
+            )}
+          </div>
+        </>
       )}
+      <p className="muted tiny">Answers use the demo venue's 22 transactions, 19 Sep – 19 Oct.</p>
     </div>
   )
 }
