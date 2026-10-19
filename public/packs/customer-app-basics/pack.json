@@ -1,0 +1,466 @@
+{
+  "id": "customer-app-basics",
+  "title": "Customer App basics",
+  "product": "Customer App",
+  "market": "AE",
+  "version": "1.0.0",
+  "description": "What guests see from scanning the table QR to paying and rating, your part at each step, and what to do when a guest gets stuck. From Zaheem's Customer App Module 1 deck (steps 1.1–1.13, FAQs 1–3).",
+  "modules": [
+    {
+      "id": "guest-journey",
+      "title": "The guest's journey",
+      "minutes": 10,
+      "summary": "QR scan, menu, bill, tip, payment and rating: what the guest sees and what you do.",
+      "lessons": [
+        {
+          "id": "1A",
+          "title": "Scan and browse"
+        },
+        {
+          "id": "1B",
+          "title": "Order on POS"
+        },
+        {
+          "id": "1C",
+          "title": "The bill"
+        },
+        {
+          "id": "1D",
+          "title": "Tip and pay"
+        },
+        {
+          "id": "1E",
+          "title": "Status and rating"
+        }
+      ],
+      "steps": [
+        {
+          "id": "1A.1",
+          "lesson": "1A",
+          "title": "Guest scans the table QR",
+          "instruction": "When a guest scans the QR on the table, their phone opens this screen with two buttons: Pay now and View menu. No app download needed, the camera is enough.",
+          "target": "ca-landing-actions",
+          "advance": "next",
+          "screen": "landing",
+          "reset": true,
+          "note": "Say to the guest: “Just scan this with your camera to see our menu.”",
+          "say": "When your guest scans the table QR, they see two buttons: Pay now and View menu. They don't need to download anything."
+        },
+        {
+          "id": "1A.2",
+          "lesson": "1A",
+          "title": "Guest taps View menu",
+          "instruction": "Before ordering, the guest opens the menu. Tap View menu on the phone, as the guest would.",
+          "target": "ca-view-menu",
+          "advance": "click",
+          "screen": "landing",
+          "note": "If a guest taps Pay now before ordering, they see “Looks like you have not ordered yet”. Guide them back to View menu.",
+          "say": "Before ordering, the guest taps View menu. Tap it on the phone."
+        },
+        {
+          "id": "1A.3",
+          "lesson": "1A",
+          "title": "Guest browses the menu",
+          "instruction": "The guest browses categories and items. Guests don't order in the app: when they're ready, take the order at the table as usual.",
+          "target": "ca-menu-grid",
+          "advance": "next",
+          "screen": "menu",
+          "note": "Say to the guest: “Have a look, and I'll take your order whenever you're ready.”",
+          "say": "Guests browse the menu on their phone, but they don't order in the app. You take the order at the table as usual."
+        },
+        {
+          "id": "1B.1",
+          "lesson": "1B",
+          "title": "You punch the order on POS",
+          "instruction": "This step is yours. On the POS: open the guest's table number, add the items, and tap Send. Sending the order is what puts the bill on the guest's phone.",
+          "advance": "next",
+          "screen": "menu",
+          "reset": true,
+          "note": "The table number must match the QR the guest scans. Wrong table, wrong bill.",
+          "say": "Enter the order on the POS against the right table number and send it. If the table number is wrong, the guest won't see their bill."
+        },
+        {
+          "id": "1C.1",
+          "lesson": "1C",
+          "title": "Guest scans again and taps Pay now",
+          "instruction": "When the guest asks for the bill, invite them to scan the same QR and pay from their phone. Tap Pay now.",
+          "target": "ca-pay-now",
+          "advance": "click",
+          "screen": "landing",
+          "reset": true,
+          "note": "Say to the guest: “You can pay right from your phone. Just scan and tap Pay now.”",
+          "say": "When the guest asks for the bill, invite them to scan the same QR and tap Pay now. Tap it on the phone."
+        },
+        {
+          "id": "1C.2",
+          "lesson": "1C",
+          "title": "Guest checks the bill",
+          "instruction": "The guest sees their table number, every item, the service fee and the total. Make sure the table number is theirs. If an item is wrong, fix it on POS and the bill updates.",
+          "target": "ca-bill-items",
+          "advance": "next",
+          "screen": "bill-items",
+          "note": "Say to the guest: “Everything look right?”",
+          "say": "The guest sees their table number and itemised bill. If the table or an item is wrong, fix it on the POS."
+        },
+        {
+          "id": "1C.3",
+          "lesson": "1C",
+          "title": "Guest taps Pay fully or Split bill",
+          "instruction": "Pay fully pays the whole bill. Split bill lets each guest pay their own share from their own phone. Tap Pay fully.",
+          "target": "ca-pay-fully",
+          "advance": "click",
+          "screen": "bill",
+          "note": "For groups, mention Split bill. Say: “Paying together or separately? You can split it right here.”",
+          "say": "The guest taps Pay fully to pay the whole bill, or Split bill so each person pays their share. Tap Pay fully."
+        },
+        {
+          "id": "1D.1",
+          "lesson": "1D",
+          "title": "Guest chooses a tip",
+          "instruction": "5% is pre-selected (Most Common). The guest can pick 10% or 15%, enter a Custom tip, or remove the tip with the small ×. Always leave the choice to them.",
+          "target": "ca-tip-options",
+          "advance": "next",
+          "screen": "tip-pay",
+          "reset": true,
+          "note": "Say to the guest: “The tip is completely up to you. All of it goes to the team.”",
+          "say": "A 5 percent tip is pre-selected. The guest can pick 10 or 15 percent, enter a custom tip, or remove it. Always leave the choice to them."
+        },
+        {
+          "id": "1D.2",
+          "lesson": "1D",
+          "title": "Guest picks a payment method",
+          "instruction": "Apple Pay, Card and others, or Pay later with Tabby. Help if they're unsure, but never ask for or handle their card details.",
+          "target": "ca-payment-methods",
+          "advance": "next",
+          "screen": "tip-pay",
+          "note": "Say to the guest: “You can use Apple Pay, any card, or pay later with Tabby.”",
+          "say": "The guest chooses Apple Pay, Card and others, or Pay later with Tabby. You can help them choose, but never handle their card details."
+        },
+        {
+          "id": "1D.3",
+          "lesson": "1D",
+          "title": "Guest taps Pay",
+          "instruction": "The guest checks the final amount under You pay, then taps Pay. Give them privacy while they pay. Tap Pay with Apple Pay.",
+          "target": "ca-pay-button",
+          "advance": "click",
+          "screen": "tip-pay",
+          "say": "The guest checks the final amount and taps Pay. Give them privacy while they do this. Tap the Pay button."
+        },
+        {
+          "id": "1E.1",
+          "lesson": "1E",
+          "title": "Guest sees the payment status",
+          "instruction": "Payment was successful, with the table, amount paid, time and a status. Partially paid means part of the bill is still open: check Left to pay before closing the table.",
+          "target": "ca-status-badge",
+          "advance": "next",
+          "screen": "success",
+          "reset": true,
+          "note": "Say to the guest: “Thank you! You can tap Get the Receipt for a copy.”",
+          "say": "After paying, the guest sees Payment was successful. If it says Partially paid, part of the bill is still open, so check the amount left to pay before you close the table."
+        },
+        {
+          "id": "1E.2",
+          "lesson": "1E",
+          "title": "Guest rates 1–3 stars",
+          "instruction": "A 1–3 star rating is private. It goes only to the outlet and qlub, never online. See it as a chance to recover: your manager can read the feedback and follow up.",
+          "target": "ca-stars-low",
+          "advance": "next",
+          "screen": "success",
+          "say": "If a guest gives 1 to 3 stars, the feedback stays private between the outlet and qlub. It never goes public, so the team can fix the issue."
+        },
+        {
+          "id": "1E.3",
+          "lesson": "1E",
+          "title": "Guest rates 4–5 stars",
+          "instruction": "A 4–5 star rating takes the guest to the restaurant's Google page to leave a review. Thank them warmly, but never pressure anyone for 5 stars.",
+          "target": "ca-stars-high",
+          "advance": "next",
+          "screen": "success",
+          "note": "Say to the guest: “Thank you so much. We'd love it if you shared that on Google.”",
+          "say": "A rating of 4 or 5 stars takes the guest to the restaurant's Google page to leave a public review. Thank them, but never pressure a guest for a rating."
+        }
+      ],
+      "checks": [
+        {
+          "question": "A guest taps Pay now before they've ordered. What do they see?",
+          "options": [
+            "Their bill",
+            "“Looks like you have not ordered yet”",
+            "A payment error"
+          ],
+          "answer": 1,
+          "explain": "Right. Nothing is on the bill until you send the order on POS, so guide them to View menu."
+        },
+        {
+          "question": "What puts the bill on the guest's phone?",
+          "options": [
+            "The guest scanning the QR twice",
+            "You sending the order on POS to the right table",
+            "The guest tapping View menu"
+          ],
+          "answer": 1,
+          "explain": "Right. The order must be sent on the same table number as the QR."
+        },
+        {
+          "question": "A guest wants to leave a smaller tip. What do you tell them?",
+          "options": [
+            "The tip can't be changed",
+            "They can pick another %, enter a custom tip, or remove it",
+            "Ask the manager"
+          ],
+          "answer": 1,
+          "explain": "Right. The tip is always the guest's choice."
+        },
+        {
+          "question": "A guest gives 2 stars. Where does the rating go?",
+          "options": [
+            "The restaurant's Google page",
+            "It stays private between the outlet and qlub",
+            "Social media"
+          ],
+          "answer": 1,
+          "explain": "Right. Only 4–5 stars go to Google. Low ratings are private so the team can fix the issue."
+        },
+        {
+          "question": "The success screen says Partially paid. What do you do?",
+          "options": [
+            "Close the table",
+            "Check Left to pay before closing the table",
+            "Ask the guest to pay the full bill again"
+          ],
+          "answer": 1,
+          "explain": "Right. Part of the bill is still open."
+        }
+      ]
+    },
+    {
+      "id": "when-stuck",
+      "title": "When a guest gets stuck",
+      "minutes": 6,
+      "summary": "FAQs 1–3: empty bills, changing the tip, and “I've already paid”.",
+      "lessons": [
+        {
+          "id": "F1",
+          "title": "Empty or wrong bill"
+        },
+        {
+          "id": "F2",
+          "title": "Changing the tip"
+        },
+        {
+          "id": "F3",
+          "title": "“I've already paid”"
+        }
+      ],
+      "steps": [
+        {
+          "id": "F1.1",
+          "lesson": "F1",
+          "title": "“My bill is empty or wrong”",
+          "instruction": "The guest sees “Looks like you have not ordered yet”, or items that aren't theirs. The order hasn't been sent on POS yet, or it's on the wrong table.",
+          "target": "ca-not-ordered-msg",
+          "advance": "next",
+          "screen": "not-ordered",
+          "reset": true,
+          "note": "Say to the guest: “Let me check that for you, one moment.”",
+          "say": "If a guest's bill is empty or wrong, the order either hasn't been sent on the POS or it's on a different table."
+        },
+        {
+          "id": "F1.2",
+          "lesson": "F1",
+          "title": "Fix it on POS, then Try again",
+          "instruction": "On the POS: find the guest's table, check the order was sent, and move it to the right table if needed. Then ask the guest to tap Try again.",
+          "target": "ca-try-again",
+          "advance": "next",
+          "screen": "not-ordered",
+          "note": "Say to the guest: “All fixed. Please tap Try again.”",
+          "say": "On the POS, check the order was sent and is on the same table number as the QR. Fix it, then ask the guest to tap Try again."
+        },
+        {
+          "id": "F2.1",
+          "lesson": "F2",
+          "title": "“Can I change the tip?”",
+          "instruction": "Of course. Show the guest: tap another %, tap the small × to remove the tip, or use Custom tip to enter an amount.",
+          "target": "ca-tip-remove",
+          "advance": "next",
+          "screen": "tip-pay",
+          "reset": true,
+          "note": "Say to the guest: “Of course, it's completely your choice.”",
+          "say": "If a guest asks about the tip, show them they can pick another percentage, enter a custom tip, or tap the small cross to remove it. It's always their choice."
+        },
+        {
+          "id": "F2.2",
+          "lesson": "F2",
+          "title": "Custom tip",
+          "instruction": "Custom tip lets the guest type any amount, including a smaller one.",
+          "target": "ca-custom-tip",
+          "advance": "next",
+          "screen": "tip-pay",
+          "say": "Custom tip lets the guest type any amount."
+        },
+        {
+          "id": "F3.1",
+          "lesson": "F3",
+          "title": "“I've already paid”",
+          "instruction": "Politely ask to see the confirmation on their phone. Check the status: Paid, or Partially paid with an amount still left to pay.",
+          "target": "ca-status-badge",
+          "advance": "next",
+          "screen": "success",
+          "reset": true,
+          "note": "Say to the guest: “Thank you! Could you show me the confirmation, please?”",
+          "say": "If a guest says they've paid, politely ask to see the confirmation screen. Check whether it says Paid or Partially paid."
+        },
+        {
+          "id": "F3.2",
+          "lesson": "F3",
+          "title": "Open Table View",
+          "instruction": "Now confirm it on the Vendor Panel before closing the table. Click Table View in the left menu.",
+          "target": "nav-tableView",
+          "advance": "click",
+          "reset": true,
+          "say": "Confirm the payment on the Vendor Panel. Click Table View in the left menu."
+        },
+        {
+          "id": "F3.3",
+          "lesson": "F3",
+          "title": "Find the guest's table",
+          "instruction": "Yellow tiles are partially paid and still owe money. Open Table 2 to see what's been paid.",
+          "target": "table-toggle-7159271922",
+          "advance": "click",
+          "page": "tableView",
+          "say": "Yellow tiles still owe money. Open Table 2."
+        },
+        {
+          "id": "F3.4",
+          "lesson": "F3",
+          "title": "Check Remaining",
+          "instruction": "Remaining shows what the table still owes. Never ask a guest to pay again until you've checked here. Can't find the payment? Call your manager.",
+          "target": "table-remaining-7159271922",
+          "advance": "next",
+          "page": "tableView",
+          "say": "Remaining shows what the table still owes. Never ask a guest to pay again until you've checked. If you can't find it, call your manager."
+        }
+      ],
+      "checks": [
+        {
+          "question": "A guest's bill is empty. What's the first thing to check?",
+          "options": [
+            "Their phone's internet",
+            "That the order was sent on POS to the right table",
+            "Their card"
+          ],
+          "answer": 1,
+          "explain": "Right. Fix it on POS, then the guest taps Try again."
+        },
+        {
+          "question": "A guest says they've paid but you're not sure. What do you do?",
+          "options": [
+            "Ask them to pay again",
+            "Check the confirmation, then Table View, before asking again",
+            "Close the table"
+          ],
+          "answer": 1,
+          "explain": "Right. Never ask a guest to pay twice before checking."
+        },
+        {
+          "question": "Where do you see how much a table still owes?",
+          "options": [
+            "Table View → open the table → Remaining",
+            "Dashboard → Revenue",
+            "Customer App → Get the Receipt"
+          ],
+          "answer": 0,
+          "explain": "Right. Yellow tiles still owe money; Remaining shows how much."
+        }
+      ]
+    }
+  ],
+  "faqs": [
+    {
+      "q": "How does a guest pay with qlub?",
+      "a": "They scan the table QR, tap Pay now, check the bill, choose a tip and a payment method, then tap Pay.",
+      "lesson": "guest-journey/1C",
+      "keywords": [
+        "pay",
+        "qr",
+        "scan",
+        "bill",
+        "customer app",
+        "guest pay"
+      ]
+    },
+    {
+      "q": "How does a guest split the bill?",
+      "a": "On the bill, they tap Split bill. Each person then pays their own share from their own phone.",
+      "lesson": "guest-journey/1C",
+      "keywords": [
+        "split",
+        "separately",
+        "share",
+        "group",
+        "split bill"
+      ]
+    },
+    {
+      "q": "Which payment methods can guests use?",
+      "a": "Apple Pay, Card and others, or Pay later with Tabby. Never handle a guest's card details.",
+      "lesson": "guest-journey/1D",
+      "keywords": [
+        "apple pay",
+        "card",
+        "tabby",
+        "payment method",
+        "pay later"
+      ]
+    },
+    {
+      "q": "What happens with guest ratings?",
+      "a": "1–3 stars stay private between the outlet and qlub. 4–5 stars send the guest to the restaurant's Google page.",
+      "lesson": "guest-journey/1E",
+      "keywords": [
+        "rating",
+        "stars",
+        "review",
+        "google",
+        "feedback"
+      ]
+    },
+    {
+      "q": "The guest's bill is empty or wrong",
+      "a": "The order hasn't been sent on POS, or it's on the wrong table. Fix it on POS, then the guest taps Try again.",
+      "lesson": "when-stuck/F1",
+      "keywords": [
+        "empty bill",
+        "wrong bill",
+        "not ordered",
+        "no order",
+        "nothing to pay",
+        "try again"
+      ]
+    },
+    {
+      "q": "Can a guest change or remove the tip?",
+      "a": "Yes. They can pick another %, enter a custom tip, or tap the small × to remove it.",
+      "lesson": "when-stuck/F2",
+      "keywords": [
+        "tip",
+        "change tip",
+        "remove tip",
+        "no tip",
+        "custom tip"
+      ]
+    },
+    {
+      "q": "A guest says they've already paid",
+      "a": "Ask to see the confirmation, then check the table in Table View. Never ask them to pay again until you've checked.",
+      "lesson": "when-stuck/F3",
+      "keywords": [
+        "already paid",
+        "paid",
+        "proof",
+        "confirmation",
+        "pay twice"
+      ]
+    }
+  ]
+}
