@@ -1,0 +1,2828 @@
+From 551a726ef2a4489499e90e6d59eaae23c0c78946 Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Tue, 20 Oct 2026 14:37:21 +1100
+Subject: [PATCH 1/5] Replace Ask a question card with floating Qubi helper bot
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01TrGYPmsaYfv65uvaw4k5Qn
+---
+ src/App.tsx                  |   2 +
+ src/components/HelperBot.tsx | 312 +++++++++++++++++++++++++++++++++++
+ src/pages/Training.tsx       | 171 +------------------
+ src/styles.css               |  34 +++-
+ src/training/TourOverlay.tsx |   4 +-
+ 5 files changed, 353 insertions(+), 170 deletions(-)
+ create mode 100644 src/components/HelperBot.tsx
+
+diff --git a/src/App.tsx b/src/App.tsx
+index f478cbc..9bdf0df 100644
+--- a/src/App.tsx
++++ b/src/App.tsx
+@@ -1,4 +1,5 @@
+ import { useEffect } from 'react'
++import { HelperBot } from './components/HelperBot'
+ import { OrderModal } from './components/OrderModal'
+ import { RefundDialog } from './components/RefundDialog'
+ import { Sidebar } from './components/Sidebar'
+@@ -40,6 +41,7 @@ function Shell() {
+       <TimeSettings />
+       <OrderModal />
+       <RefundDialog />
++      <HelperBot />
+       <TourOverlay />
+       <TargetDebug />
+     </div>
+diff --git a/src/components/HelperBot.tsx b/src/components/HelperBot.tsx
+new file mode 100644
+index 0000000..e70726f
+--- /dev/null
++++ b/src/components/HelperBot.tsx
+@@ -0,0 +1,312 @@
++import { useEffect, useMemo, useRef, useState } from 'react'
++import { IconClose, IconMic, IconMute, IconPlay, IconSearch, IconVolume } from './Icons'
++import { answerVenue, DATA_QUESTIONS } from '../training/venueAnswers'
++import { speak, useListen } from '../training/voice'
++import type { Faq, TrainingPack } from '../training/types'
++import { useStore, type PageKey } from '../store'
++
++export const BOT_NAME = 'Qubi'
++
++const TIPS: Partial<Record<PageKey, string>> = {
++  training: 'Stuck on something? Ask me how to do it, or about this venue’s numbers.',
++  dashboard: 'Want to know what a figure means? Ask me.',
++  orders: 'Looking for an order? I can help you find it.',
++  payments: 'Need to match a payment or issue a refund? Ask me how.',
++  tableView: 'Want to know which tables still owe? Just ask.',
++}
++
++const STOP = new Set(['the', 'and', 'how', 'what', 'did', 'does', 'was', 'were', 'are', 'can', 'for', 'our', 'this', 'that', 'last', 'week', 'month', 'days', 'with', 'from', 'will', 'have', 'has', 'get', 'see', 'you', 'they', 'their', 'who', 'which', 'why', 'when', 'today', 'yesterday', 'much', 'many'])
++
++function score(f: Faq, q: string) {
++  const words = q.toLowerCase().split(/\W+/).filter((w) => w.length > 2 && !STOP.has(w))
++  if (!words.length) return 0
++  const hay = `${f.q} ${f.a} ${(f.keywords ?? []).join(' ')}`.toLowerCase()
++  return words.reduce((s, w) => s + (hay.includes(w) ? 1 : 0), 0)
++}
++
++/** Friendly floating helper that lives in the bottom-right corner on every page. */
++export function HelperBot() {
++  const { tour, page } = useStore()
++  const [open, setOpen] = useState(false)
++  const [tip, setTip] = useState<string | null>(null)
++  const [tipSeen, setTipSeen] = useState(false)
++
++  // Peek out with a tip a few seconds after landing, once per session.
++  useEffect(() => {
++    if (open || tipSeen) return
++    const t = window.setTimeout(() => setTip(TIPS[page] ?? TIPS.training!), 2500)
++    return () => window.clearTimeout(t)
++  }, [page, open, tipSeen])
++
++  useEffect(() => {
++    if (!tip) return
++    const t = window.setTimeout(() => {
++      setTip(null)
++      setTipSeen(true)
++    }, 9000)
++    return () => window.clearTimeout(t)
++  }, [tip])
++
++  useEffect(() => {
++    if (!open) return
++    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && setOpen(false)
++    window.addEventListener('keydown', onKey)
++    return () => window.removeEventListener('keydown', onKey)
++  }, [open])
++
++  // Keep out of the way while a guided lesson is running.
++  if (tour) return null
++
++  const toggle = () => {
++    setTip(null)
++    setTipSeen(true)
++    setOpen((o) => !o)
++  }
++
++  return (
++    <div className={`helper ${open ? 'is-open' : ''}`} data-tour="helper">
++      {open && <HelperPanel onClose={() => setOpen(false)} />}
++      {!open && tip && (
++        <div className="helper-tip" role="status">
++          <button className="helper-tip-text" onClick={toggle}>
++            {tip}
++          </button>
++          <button
++            className="icon-btn"
++            aria-label="Dismiss"
++            onClick={() => {
++              setTip(null)
++              setTipSeen(true)
++            }}
++          >
++            <IconClose size={12} />
++          </button>
++        </div>
++      )}
++      <button
++        className="helper-fab"
++        onClick={toggle}
++        aria-label={open ? `Close ${BOT_NAME}` : `Ask ${BOT_NAME} a question`}
++        title={open ? 'Close' : `Ask ${BOT_NAME}`}
++        data-tour="helper-open"
++      >
++        <Mascot />
++      </button>
++    </div>
++  )
++}
++
++/** Original mascot: a little speech-bubble buddy with blinking eyes. */
++export function Mascot({ size = 64 }: { size?: number }) {
++  return (
++    <svg className="mascot" width={size} height={size} viewBox="0 0 64 64" aria-hidden>
++      <defs>
++        <linearGradient id="mascot-body" x1="0" y1="0" x2="0" y2="1">
++          <stop offset="0" stopColor="#9a2bea" />
++          <stop offset="1" stopColor="#6a00b5" />
++        </linearGradient>
++      </defs>
++      <ellipse cx="32" cy="60" rx="16" ry="2.5" fill="rgba(40,0,70,.18)" className="mascot-shadow" />
++      <g className="mascot-body">
++        <line x1="32" y1="9" x2="32" y2="3" stroke="#7d00d4" strokeWidth="2.5" strokeLinecap="round" />
++        <circle cx="32" cy="3.5" r="3" fill="#ffb648" />
++        <path
++          d="M14 10h36a8 8 0 0 1 8 8v20a8 8 0 0 1-8 8H30l-9 8v-8h-7a8 8 0 0 1-8-8V18a8 8 0 0 1 8-8z"
++          fill="url(#mascot-body)"
++        />
++        <g className="mascot-eyes">
++          <ellipse cx="24" cy="26" rx="4" ry="5" fill="#fff" />
++          <ellipse cx="40" cy="26" rx="4" ry="5" fill="#fff" />
++          <circle cx="25" cy="27" r="2" fill="#2a0047" />
++          <circle cx="41" cy="27" r="2" fill="#2a0047" />
++        </g>
++        <path d="M27 36q5 4 10 0" stroke="#fff" strokeWidth="2.2" fill="none" strokeLinecap="round" />
++        <circle cx="18" cy="34" r="2.2" fill="#ff8ccf" opacity=".7" />
++        <circle cx="46" cy="34" r="2.2" fill="#ff8ccf" opacity=".7" />
++      </g>
++    </svg>
++  )
++}
++
++function HelperPanel({ onClose }: { onClose: () => void }) {
++  const { packs, startTour, payments, openInPanel, voiceOn, toggleVoice, trainees, activeTraineeId } = useStore()
++  const me = trainees.find((t) => t.id === activeTraineeId)
++  const [q, setQ] = useState('')
++  const [asked, setAsked] = useState('')
++  const [picked, setPicked] = useState<{ f: Faq; pack: TrainingPack } | null>(null)
++  const inputRef = useRef<HTMLInputElement>(null)
++  const all = useMemo(() => packs.flatMap((pack) => pack.faqs.map((f) => ({ f, pack }))), [packs])
++  const venue = useMemo(() => (asked ? answerVenue(asked, payments) : null), [asked, payments])
++  const results = asked
++    ? all.map((x) => ({ ...x, s: score(x.f, asked) })).filter((x) => x.s > 0).sort((a, b) => b.s - a.s).slice(0, venue ? 3 : 5)
++    : []
++
++  useEffect(() => inputRef.current?.focus(), [])
++
++  const ask = (text: string) => {
++    const t = text.trim()
++    setQ(t)
++    setAsked(t)
++    setPicked(null)
++    if (!t) return
++    const v = answerVenue(t, payments)
++    const top = all.map((x) => ({ ...x, s: score(x.f, t) })).sort((a, b) => b.s - a.s)[0]
++    if (voiceOn) speak(v ? v.text : top && top.s > 0 ? top.f.a : 'I don’t have an answer for that yet. Ask your manager.')
++  }
++  const mic = useListen(ask)
++
++  const show = (x: { f: Faq; pack: TrainingPack }) => {
++    if (!x.f.lesson) return
++    const [moduleId, lessonId] = x.f.lesson.split('/')
++    onClose()
++    startTour(x.pack.id, moduleId, lessonId)
++  }
++
++  return (
++    <div className="helper-panel ask" role="dialog" aria-label={`Ask ${BOT_NAME}`} data-tour="ask-box">
++      <div className="helper-head">
++        <Mascot size={34} />
++        <div className="grow">
++          <b>{BOT_NAME}</b>
++          <div className="muted tiny">Your Vendor Panel helper</div>
++        </div>
++        <button className="icon-btn" onClick={toggleVoice} title={voiceOn ? 'Answers are read aloud' : 'Voice off'}>
++          {voiceOn ? <IconVolume size={16} /> : <IconMute size={16} />}
++        </button>
++        <button className="icon-btn" onClick={onClose} title="Close" aria-label="Close">
++          <IconClose size={16} />
++        </button>
++      </div>
++
++      <div className="helper-body">
++        <div className="bot-bubble">
++          Hi{me ? ` ${me.name}` : ''}! Ask me how to do something, or about this venue’s numbers: takings, tips, payouts, a
++          guest’s card, tables that still owe.
++        </div>
++
++        {asked && <div className="me-bubble">{asked}</div>}
++
++        {picked ? (
++          <div className="answer">
++            <div className="answer-q">{picked.f.q}</div>
++            <p>{picked.f.a}</p>
++            <div className="row gap">
++              {picked.f.lesson && (
++                <button className="btn btn-primary small" onClick={() => show(picked)} data-tour="ask-show-me">
++                  <IconPlay size={12} /> Show me on the panel
++                </button>
++              )}
++              <button className="btn btn-text small" onClick={() => setPicked(null)}>
++                Back
++              </button>
++            </div>
++          </div>
++        ) : (
++          <>
++            {venue && (
++              <div className="answer data" data-tour="ask-data-answer">
++                <div className="eyebrow">FROM THIS VENUE'S DATA</div>
++                <p>{venue.text}</p>
++                {venue.lines && (
++                  <div className="answer-lines">
++                    {venue.lines.map(([a, b], i) => (
++                      <div key={i}>
++                        <span>{a}</span>
++                        <b>{b}</b>
++                      </div>
++                    ))}
++                  </div>
++                )}
++                {venue.note && <p className="muted small">{venue.note}</p>}
++                {venue.open && (
++                  <div className="row gap">
++                    <button
++                      className="btn btn-primary small"
++                      onClick={() => {
++                        onClose()
++                        openInPanel(venue.open!)
++                      }}
++                      data-tour="ask-open-panel"
++                    >
++                      <IconPlay size={12} /> {venue.open.label}
++                    </button>
++                  </div>
++                )}
++              </div>
++            )}
++            <div className="faq-list">
++              {asked && results.length > 0 && <div className="eyebrow">{venue ? 'RELATED HOW-TOS' : 'HOW-TOS'}</div>}
++              {asked && !venue && results.length === 0 && (
++                <div className="bot-bubble">I don't have an answer for that yet. Try other words, or ask your manager.</div>
++              )}
++              {results.map((x, i) => (
++                <button key={i} className="faq" onClick={() => setPicked(x)} data-tour={i === 0 ? 'ask-first-result' : undefined}>
++                  {x.f.q}
++                </button>
++              ))}
++              {!asked && (
++                <>
++                  <div className="eyebrow">HOW DO I…</div>
++                  {all.slice(0, 4).map((x, i) => (
++                    <button key={i} className="faq" onClick={() => setPicked(x)} data-tour={i === 0 ? 'ask-first-result' : undefined}>
++                      {x.f.q}
++                    </button>
++                  ))}
++                  <div className="eyebrow" style={{ marginTop: 6 }}>
++                    THIS VENUE'S NUMBERS
++                  </div>
++                  <div className="chips">
++                    {DATA_QUESTIONS.map((d) => (
++                      <button key={d} className="suggest" onClick={() => ask(d)}>
++                        {d}
++                      </button>
++                    ))}
++                  </div>
++                </>
++              )}
++            </div>
++          </>
++        )}
++      </div>
++
++      <div className="helper-foot">
++        {mic.listening && <div className="heard">Listening… ask your question</div>}
++        {mic.error && <div className="heard">{mic.error}</div>}
++        <form
++          className="input-wrap"
++          onSubmit={(e) => {
++            e.preventDefault()
++            ask(q)
++          }}
++        >
++          <IconSearch size={15} />
++          <input
++            ref={inputRef}
++            placeholder="e.g. Which tables still owe money?"
++            value={q}
++            onChange={(e) => {
++              setQ(e.target.value)
++              if (!e.target.value) setAsked('')
++            }}
++            data-tour="ask-input"
++          />
++          {mic.supported && (
++            <button
++              type="button"
++              className={`icon-btn ${mic.listening ? 'listening' : ''}`}
++              onClick={mic.listening ? mic.stop : mic.start}
++              title="Ask by voice"
++              data-tour="ask-mic"
++            >
++              <IconMic size={16} />
++            </button>
++          )}
++          <button type="submit" className="btn btn-primary small" data-tour="ask-submit">
++            Ask
++          </button>
++        </form>
++        <p className="muted tiny">Answers use the demo venue's 22 transactions, 19 Sep – 19 Oct.</p>
++      </div>
++    </div>
++  )
++}
+diff --git a/src/pages/Training.tsx b/src/pages/Training.tsx
+index e68c89a..c82f245 100644
+--- a/src/pages/Training.tsx
++++ b/src/pages/Training.tsx
+@@ -1,10 +1,9 @@
+-import { useMemo, useState } from 'react'
+-import { IconCheck, IconMic, IconMute, IconPlay, IconSearch, IconVolume } from '../components/Icons'
+-import { answerVenue, DATA_QUESTIONS } from '../training/venueAnswers'
+-import { speak, useListen } from '../training/voice'
++import { useState } from 'react'
++import { IconCheck, IconMic, IconPlay } from '../components/Icons'
++import { useListen } from '../training/voice'
+ import { TopBar } from '../components/TopBar'
+ import { moduleKey } from '../training/packs'
+-import type { Faq, TrainingPack } from '../training/types'
++import type { TrainingPack } from '../training/types'
+ import { useStore } from '../store'
+ import type { PackIndex } from '../training/types'
+ 
+@@ -108,7 +107,7 @@ function PersonalPlan() {
+           </h2>
+           <p className="muted">
+             {trained
+-              ? 'You’ve finished every module. Ask anything below and we’ll walk you through it on the real screen.'
++              ? 'You’ve finished every module. Ask Qubi in the corner anything and we’ll walk you through it on the real screen.'
+               : `${done} of ${modules.length} modules done · about ${minutesLeft} minutes left. Each step happens on the real panel: click what’s highlighted.`}
+           </p>
+           <div className="progress">
+@@ -151,171 +150,11 @@ function PersonalPlan() {
+             )
+           })}
+         </div>
+-        <AskBox highlight={trained} />
+       </div>
+     </>
+   )
+ }
+ 
+-const STOP = new Set(['the', 'and', 'how', 'what', 'did', 'does', 'was', 'were', 'are', 'can', 'for', 'our', 'this', 'that', 'last', 'week', 'month', 'days', 'with', 'from', 'will', 'have', 'has', 'get', 'see', 'you', 'they', 'their', 'who', 'which', 'why', 'when', 'today', 'yesterday', 'much', 'many'])
+-
+-function score(f: Faq, q: string) {
+-  const words = q.toLowerCase().split(/\W+/).filter((w) => w.length > 2 && !STOP.has(w))
+-  if (!words.length) return 0
+-  const hay = `${f.q} ${f.a} ${(f.keywords ?? []).join(' ')}`.toLowerCase()
+-  return words.reduce((s, w) => s + (hay.includes(w) ? 1 : 0), 0)
+-}
+-
+-function AskBox({ highlight }: { highlight: boolean }) {
+-  const { packs, startTour, payments, openInPanel, voiceOn, toggleVoice } = useStore()
+-  const [q, setQ] = useState('')
+-  const [asked, setAsked] = useState('')
+-  const [picked, setPicked] = useState<{ f: Faq; pack: TrainingPack } | null>(null)
+-  const all = useMemo(() => packs.flatMap((pack) => pack.faqs.map((f) => ({ f, pack }))), [packs])
+-  const venue = useMemo(() => (asked ? answerVenue(asked, payments) : null), [asked, payments])
+-  const results = asked
+-    ? all.map((x) => ({ ...x, s: score(x.f, asked) })).filter((x) => x.s > 0).sort((a, b) => b.s - a.s).slice(0, venue ? 3 : 5)
+-    : []
+-
+-  const ask = (text: string) => {
+-    const t = text.trim()
+-    setQ(t)
+-    setAsked(t)
+-    setPicked(null)
+-    if (!t) return
+-    const v = answerVenue(t, payments)
+-    const top = all.map((x) => ({ ...x, s: score(x.f, t) })).sort((a, b) => b.s - a.s)[0]
+-    if (voiceOn) speak(v ? v.text : top && top.s > 0 ? top.f.a : 'I don\u2019t have an answer for that yet. Ask your manager.')
+-  }
+-  const mic = useListen(ask)
+-
+-  const show = (x: { f: Faq; pack: TrainingPack }) => {
+-    if (!x.f.lesson) return
+-    const [moduleId, lessonId] = x.f.lesson.split('/')
+-    startTour(x.pack.id, moduleId, lessonId)
+-  }
+-
+-  return (
+-    <div className={`card ask ${highlight ? 'glow' : ''}`} data-tour="ask-box">
+-      <div className="card-head tight">
+-        <h3>Ask a question</h3>
+-        <button className="icon-btn" onClick={toggleVoice} title={voiceOn ? 'Answers are read aloud' : 'Voice off'}>
+-          {voiceOn ? <IconVolume size={16} /> : <IconMute size={16} />}
+-        </button>
+-      </div>
+-      <p className="muted small">How to do something, or this venue's numbers: takings, tips, payouts, a guest's card, tables that still owe.</p>
+-      <form
+-        className="input-wrap"
+-        onSubmit={(e) => {
+-          e.preventDefault()
+-          ask(q)
+-        }}
+-      >
+-        <IconSearch size={15} />
+-        <input
+-          placeholder="e.g. Which tables still owe money?"
+-          value={q}
+-          onChange={(e) => {
+-            setQ(e.target.value)
+-            if (!e.target.value) setAsked('')
+-          }}
+-          data-tour="ask-input"
+-        />
+-        {mic.supported && (
+-          <button
+-            type="button"
+-            className={`icon-btn ${mic.listening ? 'listening' : ''}`}
+-            onClick={mic.listening ? mic.stop : mic.start}
+-            title="Ask by voice"
+-            data-tour="ask-mic"
+-          >
+-            <IconMic size={16} />
+-          </button>
+-        )}
+-        <button type="submit" className="btn btn-primary small" data-tour="ask-submit">
+-          Ask
+-        </button>
+-      </form>
+-      {mic.listening && <div className="heard">Listening… ask your question</div>}
+-      {mic.error && <div className="heard">{mic.error}</div>}
+-
+-      {picked ? (
+-        <div className="answer">
+-          <div className="answer-q">{picked.f.q}</div>
+-          <p>{picked.f.a}</p>
+-          <div className="row gap">
+-            {picked.f.lesson && (
+-              <button className="btn btn-primary small" onClick={() => show(picked)} data-tour="ask-show-me">
+-                <IconPlay size={12} /> Show me on the panel
+-              </button>
+-            )}
+-            <button className="btn btn-text small" onClick={() => setPicked(null)}>
+-              Back
+-            </button>
+-          </div>
+-        </div>
+-      ) : (
+-        <>
+-          {venue && (
+-            <div className="answer data" data-tour="ask-data-answer">
+-              <div className="eyebrow">FROM THIS VENUE'S DATA</div>
+-              <p>{venue.text}</p>
+-              {venue.lines && (
+-                <div className="answer-lines">
+-                  {venue.lines.map(([a, b], i) => (
+-                    <div key={i}>
+-                      <span>{a}</span>
+-                      <b>{b}</b>
+-                    </div>
+-                  ))}
+-                </div>
+-              )}
+-              {venue.note && <p className="muted small">{venue.note}</p>}
+-              {venue.open && (
+-                <div className="row gap">
+-                  <button className="btn btn-primary small" onClick={() => openInPanel(venue.open!)} data-tour="ask-open-panel">
+-                    <IconPlay size={12} /> {venue.open.label}
+-                  </button>
+-                </div>
+-              )}
+-            </div>
+-          )}
+-          <div className="faq-list">
+-            {asked && results.length > 0 && <div className="eyebrow">{venue ? 'RELATED HOW-TOS' : 'HOW-TOS'}</div>}
+-            {asked && !venue && results.length === 0 && (
+-              <p className="muted small">I don't have an answer for that yet. Try other words, or ask your manager.</p>
+-            )}
+-            {results.map((x, i) => (
+-              <button key={i} className="faq" onClick={() => setPicked(x)} data-tour={i === 0 ? 'ask-first-result' : undefined}>
+-                {x.f.q}
+-              </button>
+-            ))}
+-            {!asked && (
+-              <>
+-                <div className="eyebrow">HOW DO I…</div>
+-                {all.slice(0, 4).map((x, i) => (
+-                  <button key={i} className="faq" onClick={() => setPicked(x)} data-tour={i === 0 ? 'ask-first-result' : undefined}>
+-                    {x.f.q}
+-                  </button>
+-                ))}
+-                <div className="eyebrow" style={{ marginTop: 6 }}>THIS VENUE'S NUMBERS</div>
+-                <div className="chips">
+-                  {DATA_QUESTIONS.map((d) => (
+-                    <button key={d} className="suggest" onClick={() => ask(d)}>
+-                      {d}
+-                    </button>
+-                  ))}
+-                </div>
+-              </>
+-            )}
+-          </div>
+-        </>
+-      )}
+-      <p className="muted tiny">Answers use the demo venue's 22 transactions, 19 Sep – 19 Oct.</p>
+-    </div>
+-  )
+-}
+-
+ function Catalog({ packs, index }: { packs: TrainingPack[]; index: PackIndex | null }) {
+   return (
+     <div className="card">
+diff --git a/src/styles.css b/src/styles.css
+index 99b4b32..7bc945a 100644
+--- a/src/styles.css
++++ b/src/styles.css
+@@ -231,8 +231,7 @@ tr.clickable:hover td { background: var(--purple-tint) !important; }
+ .avatar.sm { width: 22px; height: 22px; font-size: 11px; margin-right: 6px; }
+ .progress { height: 8px; background: #ebe3f3; border-radius: 6px; overflow: hidden; margin-bottom: 14px; max-width: 520px; }
+ .progress div { height: 100%; background: var(--purple); transition: width .4s; }
+-.plan-grid { display: grid; grid-template-columns: 1.4fr 1fr; gap: 14px; }
+-.plan-grid.trained { grid-template-columns: 1fr 1.2fr; }
++.plan-grid { display: grid; grid-template-columns: 1fr; gap: 14px; }
+ .module-row { display: flex; gap: 12px; align-items: center; padding: 12px 0; border-bottom: 1px solid var(--line); }
+ .module-row:last-child { border-bottom: 0; }
+ .module-num { width: 30px; height: 30px; border-radius: 50%; border: 1.5px solid var(--purple); color: var(--purple); display: inline-flex; align-items: center; justify-content: center; font-weight: 600; flex: none; }
+@@ -319,3 +318,34 @@ tr.clickable:hover td { background: var(--purple-tint) !important; }
+ .suggest:hover { background: var(--purple-tint); }
+ .ask .tiny { margin-top: auto; }
+ .btn.mic.listening { background: var(--red); color: #fff; border-color: var(--red); }
++
++/* Qubi: floating helper bot */
++.helper { position: fixed; right: 22px; bottom: 20px; z-index: 25; display: flex; flex-direction: column; align-items: flex-end; gap: 10px; pointer-events: none; }
++.helper > * { pointer-events: auto; }
++.helper-fab { width: 72px; height: 72px; border-radius: 50%; display: flex; align-items: center; justify-content: center; background: transparent; padding: 0; cursor: pointer; filter: drop-shadow(0 6px 14px rgba(90, 0, 160, .28)); transition: transform .15s; }
++.helper-fab:hover { transform: scale(1.06); }
++.helper-fab:focus-visible { outline: 3px solid var(--purple-soft); }
++.mascot-body { animation: mascot-bob 2.8s ease-in-out infinite; transform-origin: 32px 40px; }
++.mascot-shadow { animation: mascot-shadow 2.8s ease-in-out infinite; transform-origin: 32px 60px; }
++.mascot-eyes { animation: mascot-blink 4.5s infinite; transform-origin: 32px 26px; }
++.helper-fab:hover .mascot-body { animation: mascot-wiggle .6s ease-in-out; }
++.helper.is-open .mascot-body { animation: none; }
++@keyframes mascot-bob { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-4px); } }
++@keyframes mascot-shadow { 0%, 100% { transform: scaleX(1); opacity: 1; } 50% { transform: scaleX(.8); opacity: .6; } }
++@keyframes mascot-blink { 0%, 92%, 100% { transform: scaleY(1); } 95% { transform: scaleY(.1); } }
++@keyframes mascot-wiggle { 0%, 100% { transform: rotate(0); } 25% { transform: rotate(-8deg); } 75% { transform: rotate(8deg); } }
++@media (prefers-reduced-motion: reduce) { .mascot-body, .mascot-shadow, .mascot-eyes { animation: none !important; } }
++
++.helper-tip { position: relative; max-width: 250px; background: #fff; border: 1px solid #eadcf7; border-radius: 12px; box-shadow: 0 8px 24px rgba(20, 0, 40, .14); padding: 10px 6px 10px 12px; display: flex; gap: 4px; align-items: flex-start; animation: helper-in .25s ease-out; margin-right: 18px; }
++.helper-tip::after { content: ''; position: absolute; right: 22px; bottom: -7px; width: 12px; height: 12px; background: #fff; border-right: 1px solid #eadcf7; border-bottom: 1px solid #eadcf7; transform: rotate(45deg); }
++.helper-tip-text { text-align: left; font-size: 12.5px; line-height: 1.45; color: var(--ink); padding: 0; background: none; }
++
++.helper-panel { width: 370px; max-width: calc(100vw - 32px); height: min(600px, calc(100vh - 120px)); background: #fff; border: 1px solid var(--line); border-radius: 16px; box-shadow: 0 18px 48px rgba(30, 0, 60, .22); display: flex; flex-direction: column; overflow: hidden; gap: 0; animation: helper-in .2s ease-out; transform-origin: bottom right; }
++@keyframes helper-in { from { opacity: 0; transform: translateY(8px) scale(.97); } to { opacity: 1; transform: none; } }
++.helper-head { display: flex; align-items: center; gap: 10px; padding: 12px 12px 12px 14px; background: linear-gradient(135deg, var(--purple-soft), #fff); border-bottom: 1px solid var(--line); }
++.helper-head .mascot-body { animation: none; }
++.helper-body { flex: 1; overflow-y: auto; padding: 14px; display: flex; flex-direction: column; gap: 10px; }
++.helper-foot { border-top: 1px solid var(--line); padding: 10px 12px 8px; display: flex; flex-direction: column; gap: 6px; }
++.helper-foot .tiny { margin: 0; text-align: center; }
++.bot-bubble { align-self: flex-start; max-width: 90%; background: var(--panel); border-radius: 12px 12px 12px 4px; padding: 9px 12px; font-size: 12.5px; line-height: 1.45; }
++.me-bubble { align-self: flex-end; max-width: 85%; background: var(--purple); color: #fff; border-radius: 12px 12px 4px 12px; padding: 8px 12px; font-size: 12.5px; }
+diff --git a/src/training/TourOverlay.tsx b/src/training/TourOverlay.tsx
+index bec4450..22c1a3f 100644
+--- a/src/training/TourOverlay.tsx
++++ b/src/training/TourOverlay.tsx
+@@ -67,7 +67,7 @@ export function TourOverlay() {
+     else if (/\b(back|previous)\b/.test(t)) back()
+     else if (/\b(repeat|again|what)\b/.test(t) && step) speak(step.say ?? step.instruction)
+     else if (/\b(stop|exit|quit|cancel)\b/.test(t)) exit()
+-    else speak('Say next, back, repeat or stop. For other questions, use Ask a question.')
++    else speak('Say next, back, repeat or stop. For other questions, ask Qubi in the corner.')
+   })
+   useEffect(() => setHeard(null), [step?.id])
+ 
+@@ -139,7 +139,7 @@ export function TourOverlay() {
+           <h3>{tour.lessonId ? 'That’s how it’s done.' : `${mod.title} complete`}</h3>
+           <p className="muted">
+             {tour.lessonId
+-              ? 'Try it again any time from Ask a question.'
++              ? 'Try it again any time by asking Qubi in the corner.'
+               : `You answered ${tour.firstTryRight} of ${mod.checks.length} checks right first time.`}
+           </p>
+           <button
+-- 
+2.43.0
+
+
+From ebafcf0d02d0a1b2b718f92e099db7c4c08e6ab8 Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Tue, 20 Oct 2026 15:06:50 +1100
+Subject: [PATCH 2/5] Rename helper bot to Qi and add four on-brand mascot
+ concepts
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01TrGYPmsaYfv65uvaw4k5Qn
+---
+ src/components/HelperBot.tsx |  35 +----------
+ src/components/Mascot.tsx    | 119 +++++++++++++++++++++++++++++++++++
+ src/pages/Training.tsx       |   2 +-
+ src/styles.css               |   8 ++-
+ src/training/TourOverlay.tsx |   4 +-
+ 5 files changed, 129 insertions(+), 39 deletions(-)
+ create mode 100644 src/components/Mascot.tsx
+
+diff --git a/src/components/HelperBot.tsx b/src/components/HelperBot.tsx
+index e70726f..94def1c 100644
+--- a/src/components/HelperBot.tsx
++++ b/src/components/HelperBot.tsx
+@@ -3,9 +3,10 @@ import { IconClose, IconMic, IconMute, IconPlay, IconSearch, IconVolume } from '
+ import { answerVenue, DATA_QUESTIONS } from '../training/venueAnswers'
+ import { speak, useListen } from '../training/voice'
+ import type { Faq, TrainingPack } from '../training/types'
++import { Mascot } from './Mascot'
+ import { useStore, type PageKey } from '../store'
+ 
+-export const BOT_NAME = 'Qubi'
++export const BOT_NAME = 'Qi'
+ 
+ const TIPS: Partial<Record<PageKey, string>> = {
+   training: 'Stuck on something? Ask me how to do it, or about this venue’s numbers.',
+@@ -96,38 +97,6 @@ export function HelperBot() {
+   )
+ }
+ 
+-/** Original mascot: a little speech-bubble buddy with blinking eyes. */
+-export function Mascot({ size = 64 }: { size?: number }) {
+-  return (
+-    <svg className="mascot" width={size} height={size} viewBox="0 0 64 64" aria-hidden>
+-      <defs>
+-        <linearGradient id="mascot-body" x1="0" y1="0" x2="0" y2="1">
+-          <stop offset="0" stopColor="#9a2bea" />
+-          <stop offset="1" stopColor="#6a00b5" />
+-        </linearGradient>
+-      </defs>
+-      <ellipse cx="32" cy="60" rx="16" ry="2.5" fill="rgba(40,0,70,.18)" className="mascot-shadow" />
+-      <g className="mascot-body">
+-        <line x1="32" y1="9" x2="32" y2="3" stroke="#7d00d4" strokeWidth="2.5" strokeLinecap="round" />
+-        <circle cx="32" cy="3.5" r="3" fill="#ffb648" />
+-        <path
+-          d="M14 10h36a8 8 0 0 1 8 8v20a8 8 0 0 1-8 8H30l-9 8v-8h-7a8 8 0 0 1-8-8V18a8 8 0 0 1 8-8z"
+-          fill="url(#mascot-body)"
+-        />
+-        <g className="mascot-eyes">
+-          <ellipse cx="24" cy="26" rx="4" ry="5" fill="#fff" />
+-          <ellipse cx="40" cy="26" rx="4" ry="5" fill="#fff" />
+-          <circle cx="25" cy="27" r="2" fill="#2a0047" />
+-          <circle cx="41" cy="27" r="2" fill="#2a0047" />
+-        </g>
+-        <path d="M27 36q5 4 10 0" stroke="#fff" strokeWidth="2.2" fill="none" strokeLinecap="round" />
+-        <circle cx="18" cy="34" r="2.2" fill="#ff8ccf" opacity=".7" />
+-        <circle cx="46" cy="34" r="2.2" fill="#ff8ccf" opacity=".7" />
+-      </g>
+-    </svg>
+-  )
+-}
+-
+ function HelperPanel({ onClose }: { onClose: () => void }) {
+   const { packs, startTour, payments, openInPanel, voiceOn, toggleVoice, trainees, activeTraineeId } = useStore()
+   const me = trainees.find((t) => t.id === activeTraineeId)
+diff --git a/src/components/Mascot.tsx b/src/components/Mascot.tsx
+new file mode 100644
+index 0000000..382f3d8
+--- /dev/null
++++ b/src/components/Mascot.tsx
+@@ -0,0 +1,119 @@
++/**
++ * Qi, the floating helper. Four on-brand concepts (qlub purple #7d00d4, the "::" from the
++ * logo, the yellow accent). Switch the live one with MASCOT_VARIANT.
++ */
++export type MascotVariant = 'bubble' | 'q' | 'spark' | 'bill'
++export const MASCOT_VARIANT: MascotVariant = 'q'
++
++export const MASCOT_OPTIONS: { id: MascotVariant; name: string; idea: string }[] = [
++  { id: 'q', name: 'The q', idea: 'The lowercase q from the logo. The bowl is the face, the tail is the speech-bubble tail.' },
++  { id: 'spark', name: 'Q + i spark', idea: 'An “i” with a face. The dot over the i floats above as a glowing yellow spark (qi = energy).' },
++  { id: 'bubble', name: ':: bubble', idea: 'A chat bubble whose eyes are the “::” dots from the qlub logo.' },
++  { id: 'bill', name: 'Bill buddy', idea: 'A friendly receipt: pay-at-table in one glance.' },
++]
++
++const Grad = ({ id }: { id: string }) => (
++  <defs>
++    <linearGradient id={id} gradientUnits="userSpaceOnUse" x1="0" y1="6" x2="0" y2="58">
++      <stop offset="0" stopColor="#9a2bea" />
++      <stop offset="1" stopColor="#6a00b5" />
++    </linearGradient>
++    <radialGradient id={`${id}-glow`}>
++      <stop offset="0" stopColor="#ffd45e" />
++      <stop offset=".55" stopColor="#fbc21e" />
++      <stop offset="1" stopColor="#fbc21e" stopOpacity="0" />
++    </radialGradient>
++  </defs>
++)
++
++const Eyes = ({ y, dx = 8, cx = 32 }: { y: number; dx?: number; cx?: number }) => (
++  <g className="mascot-eyes" style={{ transformOrigin: `${cx}px ${y}px` }}>
++    <ellipse cx={cx - dx} cy={y} rx="3.6" ry="4.6" fill="#fff" />
++    <ellipse cx={cx + dx} cy={y} rx="3.6" ry="4.6" fill="#fff" />
++    <circle cx={cx - dx + 1} cy={y + 1} r="1.9" fill="#2a0047" />
++    <circle cx={cx + dx + 1} cy={y + 1} r="1.9" fill="#2a0047" />
++  </g>
++)
++
++const Smile = ({ cx = 32, y }: { cx?: number; y: number }) => (
++  <path d={`M${cx - 4.5} ${y}q4.5 3.6 9 0`} stroke="#fff" strokeWidth="2.2" fill="none" strokeLinecap="round" />
++)
++
++const Cheeks = ({ cx = 32, y, dx = 13 }: { cx?: number; y: number; dx?: number }) => (
++  <>
++    <circle cx={cx - dx} cy={y} r="2.1" fill="#ff8ccf" opacity=".7" />
++    <circle cx={cx + dx} cy={y} r="2.1" fill="#ff8ccf" opacity=".7" />
++  </>
++)
++
++export function Mascot({ size = 64, variant = MASCOT_VARIANT }: { size?: number; variant?: MascotVariant }) {
++  const g = `mascot-${variant}`
++  return (
++    <svg className={`mascot mascot-${variant}`} width={size} height={size} viewBox="0 0 64 64" aria-hidden>
++      <Grad id={g} />
++      <ellipse cx="32" cy="61" rx="15" ry="2.3" fill="rgba(40,0,70,.18)" className="mascot-shadow" />
++      <g className="mascot-body">
++        {variant === 'q' && (
++          <>
++            {/* bowl + descender of a lowercase q; the descender flicks out like a chat tail */}
++            <circle cx="29" cy="28" r="21" fill={`url(#${g})`} />
++            <path d="M40 22h10v29q0 6 6 7q-11 2-16-5z" fill={`url(#${g})`} />
++            <Eyes y={25} cx={28} />
++            <Smile cx={28} y={34} />
++            <Cheeks cx={28} y={33} dx={13} />
++          </>
++        )}
++        {variant === 'spark' && (
++          <>
++            {/* the tittle of the i, glowing */}
++            <circle className="mascot-spark" cx="32" cy="9" r="9" fill={`url(#${g}-glow)`} />
++            <circle className="mascot-spark" cx="32" cy="9" r="4.2" fill="#fbc21e" />
++            <rect x="15" y="20" width="34" height="38" rx="15" fill={`url(#${g})`} />
++            <Eyes y={33} dx={7} />
++            <Smile y={42} />
++            <Cheeks y={41} dx={11} />
++          </>
++        )}
++        {variant === 'bubble' && (
++          <>
++            <path
++              d="M14 9h36a9 9 0 0 1 9 9v20a9 9 0 0 1-9 9H31l-9 8v-8h-8a9 9 0 0 1-9-9V18a9 9 0 0 1 9-9z"
++              fill={`url(#${g})`}
++            />
++            {/* "::" eyes, straight from the logo */}
++            <g className="mascot-eyes" style={{ transformOrigin: '32px 24px' }}>
++              {[22, 26, 38, 42].map((x) => (
++                <circle key={x} cx={x} cy={24} r="2.8" fill="#fff" />
++              ))}
++            </g>
++            <Smile y={34} />
++            <Cheeks y={33} dx={15} />
++          </>
++        )}
++        {variant === 'bill' && (
++          <>
++            <path
++              d="M14 8a4 4 0 0 1 4-4h28a4 4 0 0 1 4 4v48l-4.5-3-4.5 3-4.5-3-4.5 3-4.5-3-4.5 3-4.5-3-4.5 3z"
++              fill="#fff"
++              stroke="#7d00d4"
++              strokeWidth="2.4"
++              strokeLinejoin="round"
++            />
++            <rect x="14" y="4" width="36" height="12" rx="4" fill={`url(#${g})`} />
++            <g className="mascot-eyes" style={{ transformOrigin: '32px 25px' }}>
++              <ellipse cx="25" cy="25" rx="3" ry="3.8" fill="#2a0047" />
++              <ellipse cx="39" cy="25" rx="3" ry="3.8" fill="#2a0047" />
++              <circle cx="26" cy="24" r="1" fill="#fff" />
++              <circle cx="40" cy="24" r="1" fill="#fff" />
++            </g>
++            <path d="M27.5 32q4.5 3.6 9 0" stroke="#7d00d4" strokeWidth="2.2" fill="none" strokeLinecap="round" />
++            <circle cx="20" cy="31" r="2" fill="#ff8ccf" opacity=".7" />
++            <circle cx="44" cy="31" r="2" fill="#ff8ccf" opacity=".7" />
++            <path d="M21 41h14M21 46h9" stroke="#d9c2f0" strokeWidth="2" strokeLinecap="round" />
++            <path d="M39 41h4M39 46h4" stroke="#7d00d4" strokeWidth="2" strokeLinecap="round" />
++          </>
++        )}
++      </g>
++    </svg>
++  )
++}
+diff --git a/src/pages/Training.tsx b/src/pages/Training.tsx
+index c82f245..85b183c 100644
+--- a/src/pages/Training.tsx
++++ b/src/pages/Training.tsx
+@@ -107,7 +107,7 @@ function PersonalPlan() {
+           </h2>
+           <p className="muted">
+             {trained
+-              ? 'You’ve finished every module. Ask Qubi in the corner anything and we’ll walk you through it on the real screen.'
++              ? 'You’ve finished every module. Ask Qi in the corner anything and we’ll walk you through it on the real screen.'
+               : `${done} of ${modules.length} modules done · about ${minutesLeft} minutes left. Each step happens on the real panel: click what’s highlighted.`}
+           </p>
+           <div className="progress">
+diff --git a/src/styles.css b/src/styles.css
+index 7bc945a..d6f70a2 100644
+--- a/src/styles.css
++++ b/src/styles.css
+@@ -319,7 +319,7 @@ tr.clickable:hover td { background: var(--purple-tint) !important; }
+ .ask .tiny { margin-top: auto; }
+ .btn.mic.listening { background: var(--red); color: #fff; border-color: var(--red); }
+ 
+-/* Qubi: floating helper bot */
++/* Qi: floating helper bot */
+ .helper { position: fixed; right: 22px; bottom: 20px; z-index: 25; display: flex; flex-direction: column; align-items: flex-end; gap: 10px; pointer-events: none; }
+ .helper > * { pointer-events: auto; }
+ .helper-fab { width: 72px; height: 72px; border-radius: 50%; display: flex; align-items: center; justify-content: center; background: transparent; padding: 0; cursor: pointer; filter: drop-shadow(0 6px 14px rgba(90, 0, 160, .28)); transition: transform .15s; }
+@@ -327,14 +327,16 @@ tr.clickable:hover td { background: var(--purple-tint) !important; }
+ .helper-fab:focus-visible { outline: 3px solid var(--purple-soft); }
+ .mascot-body { animation: mascot-bob 2.8s ease-in-out infinite; transform-origin: 32px 40px; }
+ .mascot-shadow { animation: mascot-shadow 2.8s ease-in-out infinite; transform-origin: 32px 60px; }
+-.mascot-eyes { animation: mascot-blink 4.5s infinite; transform-origin: 32px 26px; }
++.mascot-eyes { animation: mascot-blink 4.5s infinite; }
++.mascot-spark { animation: mascot-spark 2.8s ease-in-out infinite; transform-origin: 32px 9px; }
++@keyframes mascot-spark { 0%, 100% { transform: translateY(0) scale(1); } 50% { transform: translateY(-3px) scale(1.12); } }
+ .helper-fab:hover .mascot-body { animation: mascot-wiggle .6s ease-in-out; }
+ .helper.is-open .mascot-body { animation: none; }
+ @keyframes mascot-bob { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-4px); } }
+ @keyframes mascot-shadow { 0%, 100% { transform: scaleX(1); opacity: 1; } 50% { transform: scaleX(.8); opacity: .6; } }
+ @keyframes mascot-blink { 0%, 92%, 100% { transform: scaleY(1); } 95% { transform: scaleY(.1); } }
+ @keyframes mascot-wiggle { 0%, 100% { transform: rotate(0); } 25% { transform: rotate(-8deg); } 75% { transform: rotate(8deg); } }
+-@media (prefers-reduced-motion: reduce) { .mascot-body, .mascot-shadow, .mascot-eyes { animation: none !important; } }
++@media (prefers-reduced-motion: reduce) { .mascot-body, .mascot-shadow, .mascot-eyes, .mascot-spark { animation: none !important; } }
+ 
+ .helper-tip { position: relative; max-width: 250px; background: #fff; border: 1px solid #eadcf7; border-radius: 12px; box-shadow: 0 8px 24px rgba(20, 0, 40, .14); padding: 10px 6px 10px 12px; display: flex; gap: 4px; align-items: flex-start; animation: helper-in .25s ease-out; margin-right: 18px; }
+ .helper-tip::after { content: ''; position: absolute; right: 22px; bottom: -7px; width: 12px; height: 12px; background: #fff; border-right: 1px solid #eadcf7; border-bottom: 1px solid #eadcf7; transform: rotate(45deg); }
+diff --git a/src/training/TourOverlay.tsx b/src/training/TourOverlay.tsx
+index 22c1a3f..2fe2a50 100644
+--- a/src/training/TourOverlay.tsx
++++ b/src/training/TourOverlay.tsx
+@@ -67,7 +67,7 @@ export function TourOverlay() {
+     else if (/\b(back|previous)\b/.test(t)) back()
+     else if (/\b(repeat|again|what)\b/.test(t) && step) speak(step.say ?? step.instruction)
+     else if (/\b(stop|exit|quit|cancel)\b/.test(t)) exit()
+-    else speak('Say next, back, repeat or stop. For other questions, ask Qubi in the corner.')
++    else speak('Say next, back, repeat or stop. For other questions, ask Qi in the corner.')
+   })
+   useEffect(() => setHeard(null), [step?.id])
+ 
+@@ -139,7 +139,7 @@ export function TourOverlay() {
+           <h3>{tour.lessonId ? 'That’s how it’s done.' : `${mod.title} complete`}</h3>
+           <p className="muted">
+             {tour.lessonId
+-              ? 'Try it again any time by asking Qubi in the corner.'
++              ? 'Try it again any time by asking Qi in the corner.'
+               : `You answered ${tour.firstTryRight} of ${mod.checks.length} checks right first time.`}
+           </p>
+           <button
+-- 
+2.43.0
+
+
+From e77fef452917c368103203fe243b60e00e0b9b00 Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Tue, 20 Oct 2026 15:11:55 +1100
+Subject: [PATCH 3/5] Redesign Qi from the qlub logo end mark, with
+ idle/thinking/answered moods
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01TrGYPmsaYfv65uvaw4k5Qn
+---
+ src/components/HelperBot.tsx |  41 ++++++--
+ src/components/Mascot.tsx    | 184 +++++++++++++++--------------------
+ src/styles.css               |  37 ++++---
+ 3 files changed, 132 insertions(+), 130 deletions(-)
+
+diff --git a/src/components/HelperBot.tsx b/src/components/HelperBot.tsx
+index 94def1c..cd3b3c1 100644
+--- a/src/components/HelperBot.tsx
++++ b/src/components/HelperBot.tsx
+@@ -3,7 +3,7 @@ import { IconClose, IconMic, IconMute, IconPlay, IconSearch, IconVolume } from '
+ import { answerVenue, DATA_QUESTIONS } from '../training/venueAnswers'
+ import { speak, useListen } from '../training/voice'
+ import type { Faq, TrainingPack } from '../training/types'
+-import { Mascot } from './Mascot'
++import { Mascot, type MascotMood } from './Mascot'
+ import { useStore, type PageKey } from '../store'
+ 
+ export const BOT_NAME = 'Qi'
+@@ -31,6 +31,7 @@ export function HelperBot() {
+   const [open, setOpen] = useState(false)
+   const [tip, setTip] = useState<string | null>(null)
+   const [tipSeen, setTipSeen] = useState(false)
++  const [mood, setMood] = useState<MascotMood>('idle')
+ 
+   // Peek out with a tip a few seconds after landing, once per session.
+   useEffect(() => {
+@@ -66,7 +67,7 @@ export function HelperBot() {
+ 
+   return (
+     <div className={`helper ${open ? 'is-open' : ''}`} data-tour="helper">
+-      {open && <HelperPanel onClose={() => setOpen(false)} />}
++      {open && <HelperPanel onClose={() => setOpen(false)} mood={mood} setMood={setMood} />}
+       {!open && tip && (
+         <div className="helper-tip" role="status">
+           <button className="helper-tip-text" onClick={toggle}>
+@@ -91,18 +92,21 @@ export function HelperBot() {
+         title={open ? 'Close' : `Ask ${BOT_NAME}`}
+         data-tour="helper-open"
+       >
+-        <Mascot />
++        <Mascot tone="solid" mood={mood} />
+       </button>
+     </div>
+   )
+ }
+ 
+-function HelperPanel({ onClose }: { onClose: () => void }) {
++function HelperPanel({ onClose, mood, setMood }: { onClose: () => void; mood: MascotMood; setMood: (m: MascotMood) => void }) {
+   const { packs, startTour, payments, openInPanel, voiceOn, toggleVoice, trainees, activeTraineeId } = useStore()
+   const me = trainees.find((t) => t.id === activeTraineeId)
+   const [q, setQ] = useState('')
+   const [asked, setAsked] = useState('')
+   const [picked, setPicked] = useState<{ f: Faq; pack: TrainingPack } | null>(null)
++  const [pending, setPending] = useState('')
++  const timer = useRef<number>()
++  useEffect(() => () => { window.clearTimeout(timer.current); setMood('idle') }, [setMood])
+   const inputRef = useRef<HTMLInputElement>(null)
+   const all = useMemo(() => packs.flatMap((pack) => pack.faqs.map((f) => ({ f, pack }))), [packs])
+   const venue = useMemo(() => (asked ? answerVenue(asked, payments) : null), [asked, payments])
+@@ -115,9 +119,21 @@ function HelperPanel({ onClose }: { onClose: () => void }) {
+   const ask = (text: string) => {
+     const t = text.trim()
+     setQ(t)
+-    setAsked(t)
+     setPicked(null)
+-    if (!t) return
++    if (!t) {
++      setAsked('')
++      return
++    }
++    setAsked('')
++    setPending(t)
++    setMood('thinking')
++    window.clearTimeout(timer.current)
++    timer.current = window.setTimeout(() => {
++      setPending('')
++      setAsked(t)
++      setMood('happy')
++      timer.current = window.setTimeout(() => setMood('idle'), 1600)
++    }, 650)
+     const v = answerVenue(t, payments)
+     const top = all.map((x) => ({ ...x, s: score(x.f, t) })).sort((a, b) => b.s - a.s)[0]
+     if (voiceOn) speak(v ? v.text : top && top.s > 0 ? top.f.a : 'I don’t have an answer for that yet. Ask your manager.')
+@@ -134,7 +150,7 @@ function HelperPanel({ onClose }: { onClose: () => void }) {
+   return (
+     <div className="helper-panel ask" role="dialog" aria-label={`Ask ${BOT_NAME}`} data-tour="ask-box">
+       <div className="helper-head">
+-        <Mascot size={34} />
++        <Mascot size={38} tone="light" mood={mood} />
+         <div className="grow">
+           <b>{BOT_NAME}</b>
+           <div className="muted tiny">Your Vendor Panel helper</div>
+@@ -153,7 +169,14 @@ function HelperPanel({ onClose }: { onClose: () => void }) {
+           guest’s card, tables that still owe.
+         </div>
+ 
+-        {asked && <div className="me-bubble">{asked}</div>}
++        {(asked || pending) && <div className="me-bubble">{asked || pending}</div>}
++        {pending && (
++          <div className="bot-bubble typing" aria-label="Qi is thinking">
++            <span />
++            <span />
++            <span />
++          </div>
++        )}
+ 
+         {picked ? (
+           <div className="answer">
+@@ -213,7 +236,7 @@ function HelperPanel({ onClose }: { onClose: () => void }) {
+                   {x.f.q}
+                 </button>
+               ))}
+-              {!asked && (
++              {!asked && !pending && (
+                 <>
+                   <div className="eyebrow">HOW DO I…</div>
+                   {all.slice(0, 4).map((x, i) => (
+diff --git a/src/components/Mascot.tsx b/src/components/Mascot.tsx
+index 382f3d8..8c25919 100644
+--- a/src/components/Mascot.tsx
++++ b/src/components/Mascot.tsx
+@@ -1,118 +1,88 @@
+ /**
+- * Qi, the floating helper. Four on-brand concepts (qlub purple #7d00d4, the "::" from the
+- * logo, the yellow accent). Switch the live one with MASCOT_VARIANT.
++ * Qi, the floating helper. Built from the qlub logo's end mark: 12 dots in four L-shaped
++ * corners (measured from the logo). Inside the frame sits a face made of the same dot.
++ *
++ * tone: 'solid' = purple disc, white dots (corner button)
++ *       'light' = white disc, purple dots
++ *       'bare'  = no disc, purple dots (chat header, inline)
++ * mood: 'idle' | 'thinking' (dots chase round the frame) | 'happy'
+  */
+-export type MascotVariant = 'bubble' | 'q' | 'spark' | 'bill'
+-export const MASCOT_VARIANT: MascotVariant = 'q'
++export const QLUB_PURPLE = '#5e3d90'
+ 
+-export const MASCOT_OPTIONS: { id: MascotVariant; name: string; idea: string }[] = [
+-  { id: 'q', name: 'The q', idea: 'The lowercase q from the logo. The bowl is the face, the tail is the speech-bubble tail.' },
+-  { id: 'spark', name: 'Q + i spark', idea: 'An “i” with a face. The dot over the i floats above as a glowing yellow spark (qi = energy).' },
+-  { id: 'bubble', name: ':: bubble', idea: 'A chat bubble whose eyes are the “::” dots from the qlub logo.' },
+-  { id: 'bill', name: 'Bill buddy', idea: 'A friendly receipt: pay-at-table in one glance.' },
+-]
+-
+-const Grad = ({ id }: { id: string }) => (
+-  <defs>
+-    <linearGradient id={id} gradientUnits="userSpaceOnUse" x1="0" y1="6" x2="0" y2="58">
+-      <stop offset="0" stopColor="#9a2bea" />
+-      <stop offset="1" stopColor="#6a00b5" />
+-    </linearGradient>
+-    <radialGradient id={`${id}-glow`}>
+-      <stop offset="0" stopColor="#ffd45e" />
+-      <stop offset=".55" stopColor="#fbc21e" />
+-      <stop offset="1" stopColor="#fbc21e" stopOpacity="0" />
+-    </radialGradient>
+-  </defs>
+-)
+-
+-const Eyes = ({ y, dx = 8, cx = 32 }: { y: number; dx?: number; cx?: number }) => (
+-  <g className="mascot-eyes" style={{ transformOrigin: `${cx}px ${y}px` }}>
+-    <ellipse cx={cx - dx} cy={y} rx="3.6" ry="4.6" fill="#fff" />
+-    <ellipse cx={cx + dx} cy={y} rx="3.6" ry="4.6" fill="#fff" />
+-    <circle cx={cx - dx + 1} cy={y + 1} r="1.9" fill="#2a0047" />
+-    <circle cx={cx + dx + 1} cy={y + 1} r="1.9" fill="#2a0047" />
+-  </g>
+-)
++export type MascotTone = 'solid' | 'light' | 'bare'
++export type MascotMood = 'idle' | 'thinking' | 'happy'
+ 
+-const Smile = ({ cx = 32, y }: { cx?: number; y: number }) => (
+-  <path d={`M${cx - 4.5} ${y}q4.5 3.6 9 0`} stroke="#fff" strokeWidth="2.2" fill="none" strokeLinecap="round" />
+-)
++// Dot centres from the logo, scaled into a 64×64 box (frame spans 14 → 50).
++const C = [14, 22.2, 41.8, 50]
++const RX = 3.1
++const RY = 2.8
+ 
+-const Cheeks = ({ cx = 32, y, dx = 13 }: { cx?: number; y: number; dx?: number }) => (
+-  <>
+-    <circle cx={cx - dx} cy={y} r="2.1" fill="#ff8ccf" opacity=".7" />
+-    <circle cx={cx + dx} cy={y} r="2.1" fill="#ff8ccf" opacity=".7" />
+-  </>
+-)
++// Clockwise from top-left so the chase animation runs round the frame.
++const FRAME: { x: number; y: number; corner: 'tl' | 'tr' | 'br' | 'bl' }[] = [
++  { x: C[0], y: C[1], corner: 'tl' },
++  { x: C[0], y: C[0], corner: 'tl' },
++  { x: C[1], y: C[0], corner: 'tl' },
++  { x: C[2], y: C[0], corner: 'tr' },
++  { x: C[3], y: C[0], corner: 'tr' },
++  { x: C[3], y: C[1], corner: 'tr' },
++  { x: C[3], y: C[2], corner: 'br' },
++  { x: C[3], y: C[3], corner: 'br' },
++  { x: C[2], y: C[3], corner: 'br' },
++  { x: C[1], y: C[3], corner: 'bl' },
++  { x: C[0], y: C[3], corner: 'bl' },
++  { x: C[0], y: C[2], corner: 'bl' },
++]
+ 
+-export function Mascot({ size = 64, variant = MASCOT_VARIANT }: { size?: number; variant?: MascotVariant }) {
+-  const g = `mascot-${variant}`
++export function Mascot({
++  size = 64,
++  tone = 'solid',
++  mood = 'idle',
++}: {
++  size?: number
++  tone?: MascotTone
++  mood?: MascotMood
++}) {
++  const ink = tone === 'solid' ? '#fff' : QLUB_PURPLE
+   return (
+-    <svg className={`mascot mascot-${variant}`} width={size} height={size} viewBox="0 0 64 64" aria-hidden>
+-      <Grad id={g} />
+-      <ellipse cx="32" cy="61" rx="15" ry="2.3" fill="rgba(40,0,70,.18)" className="mascot-shadow" />
+-      <g className="mascot-body">
+-        {variant === 'q' && (
+-          <>
+-            {/* bowl + descender of a lowercase q; the descender flicks out like a chat tail */}
+-            <circle cx="29" cy="28" r="21" fill={`url(#${g})`} />
+-            <path d="M40 22h10v29q0 6 6 7q-11 2-16-5z" fill={`url(#${g})`} />
+-            <Eyes y={25} cx={28} />
+-            <Smile cx={28} y={34} />
+-            <Cheeks cx={28} y={33} dx={13} />
+-          </>
+-        )}
+-        {variant === 'spark' && (
+-          <>
+-            {/* the tittle of the i, glowing */}
+-            <circle className="mascot-spark" cx="32" cy="9" r="9" fill={`url(#${g}-glow)`} />
+-            <circle className="mascot-spark" cx="32" cy="9" r="4.2" fill="#fbc21e" />
+-            <rect x="15" y="20" width="34" height="38" rx="15" fill={`url(#${g})`} />
+-            <Eyes y={33} dx={7} />
+-            <Smile y={42} />
+-            <Cheeks y={41} dx={11} />
+-          </>
+-        )}
+-        {variant === 'bubble' && (
+-          <>
+-            <path
+-              d="M14 9h36a9 9 0 0 1 9 9v20a9 9 0 0 1-9 9H31l-9 8v-8h-8a9 9 0 0 1-9-9V18a9 9 0 0 1 9-9z"
+-              fill={`url(#${g})`}
+-            />
+-            {/* "::" eyes, straight from the logo */}
+-            <g className="mascot-eyes" style={{ transformOrigin: '32px 24px' }}>
+-              {[22, 26, 38, 42].map((x) => (
+-                <circle key={x} cx={x} cy={24} r="2.8" fill="#fff" />
+-              ))}
+-            </g>
+-            <Smile y={34} />
+-            <Cheeks y={33} dx={15} />
+-          </>
+-        )}
+-        {variant === 'bill' && (
+-          <>
+-            <path
+-              d="M14 8a4 4 0 0 1 4-4h28a4 4 0 0 1 4 4v48l-4.5-3-4.5 3-4.5-3-4.5 3-4.5-3-4.5 3-4.5-3-4.5 3z"
+-              fill="#fff"
+-              stroke="#7d00d4"
+-              strokeWidth="2.4"
+-              strokeLinejoin="round"
++    <svg
++      className={`mascot qi qi-${tone} qi-${mood}`}
++      width={size}
++      height={size}
++      viewBox="0 0 64 64"
++      aria-hidden
++    >
++      {tone !== 'bare' && (
++        <circle cx="32" cy="32" r="31" fill={tone === 'solid' ? QLUB_PURPLE : '#fff'} stroke={tone === 'light' ? '#e6dcf2' : 'none'} />
++      )}
++      <g className="qi-frame">
++        {FRAME.map((d, i) => (
++          <g key={i} className={`qi-corner qi-${d.corner}`}>
++            <ellipse
++              className="qi-dot"
++              style={{ animationDelay: `${(i * 0.09).toFixed(2)}s`, transformOrigin: `${d.x}px ${d.y}px` }}
++              cx={d.x}
++              cy={d.y}
++              rx={RX}
++              ry={RY}
++              fill={ink}
+             />
+-            <rect x="14" y="4" width="36" height="12" rx="4" fill={`url(#${g})`} />
+-            <g className="mascot-eyes" style={{ transformOrigin: '32px 25px' }}>
+-              <ellipse cx="25" cy="25" rx="3" ry="3.8" fill="#2a0047" />
+-              <ellipse cx="39" cy="25" rx="3" ry="3.8" fill="#2a0047" />
+-              <circle cx="26" cy="24" r="1" fill="#fff" />
+-              <circle cx="40" cy="24" r="1" fill="#fff" />
+-            </g>
+-            <path d="M27.5 32q4.5 3.6 9 0" stroke="#7d00d4" strokeWidth="2.2" fill="none" strokeLinecap="round" />
+-            <circle cx="20" cy="31" r="2" fill="#ff8ccf" opacity=".7" />
+-            <circle cx="44" cy="31" r="2" fill="#ff8ccf" opacity=".7" />
+-            <path d="M21 41h14M21 46h9" stroke="#d9c2f0" strokeWidth="2" strokeLinecap="round" />
+-            <path d="M39 41h4M39 46h4" stroke="#7d00d4" strokeWidth="2" strokeLinecap="round" />
+-          </>
+-        )}
++          </g>
++        ))}
++      </g>
++      <g className="qi-face">
++        <g className="qi-eyes" style={{ transformOrigin: '32px 28.5px' }}>
++          <ellipse cx="27.3" cy="28.5" rx={RX} ry={RY + 0.6} fill={ink} />
++          <ellipse cx="36.7" cy="28.5" rx={RX} ry={RY + 0.6} fill={ink} />
++        </g>
++        <path
++          className="qi-mouth"
++          d={mood === 'happy' ? 'M26.5 35.2q5.5 6 11 0z' : 'M27 35.6q5 4.4 10 0'}
++          stroke={ink}
++          strokeWidth="2.6"
++          strokeLinecap="round"
++          strokeLinejoin="round"
++          fill={mood === 'happy' ? ink : 'none'}
++        />
+       </g>
+     </svg>
+   )
+diff --git a/src/styles.css b/src/styles.css
+index d6f70a2..1888277 100644
+--- a/src/styles.css
++++ b/src/styles.css
+@@ -322,21 +322,31 @@ tr.clickable:hover td { background: var(--purple-tint) !important; }
+ /* Qi: floating helper bot */
+ .helper { position: fixed; right: 22px; bottom: 20px; z-index: 25; display: flex; flex-direction: column; align-items: flex-end; gap: 10px; pointer-events: none; }
+ .helper > * { pointer-events: auto; }
+-.helper-fab { width: 72px; height: 72px; border-radius: 50%; display: flex; align-items: center; justify-content: center; background: transparent; padding: 0; cursor: pointer; filter: drop-shadow(0 6px 14px rgba(90, 0, 160, .28)); transition: transform .15s; }
++.helper-fab { width: 72px; height: 72px; border-radius: 50%; display: flex; align-items: center; justify-content: center; background: transparent; padding: 0; cursor: pointer; transition: transform .15s; }
+ .helper-fab:hover { transform: scale(1.06); }
+ .helper-fab:focus-visible { outline: 3px solid var(--purple-soft); }
+-.mascot-body { animation: mascot-bob 2.8s ease-in-out infinite; transform-origin: 32px 40px; }
+-.mascot-shadow { animation: mascot-shadow 2.8s ease-in-out infinite; transform-origin: 32px 60px; }
+-.mascot-eyes { animation: mascot-blink 4.5s infinite; }
+-.mascot-spark { animation: mascot-spark 2.8s ease-in-out infinite; transform-origin: 32px 9px; }
+-@keyframes mascot-spark { 0%, 100% { transform: translateY(0) scale(1); } 50% { transform: translateY(-3px) scale(1.12); } }
+-.helper-fab:hover .mascot-body { animation: mascot-wiggle .6s ease-in-out; }
+-.helper.is-open .mascot-body { animation: none; }
+-@keyframes mascot-bob { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-4px); } }
+-@keyframes mascot-shadow { 0%, 100% { transform: scaleX(1); opacity: 1; } 50% { transform: scaleX(.8); opacity: .6; } }
+-@keyframes mascot-blink { 0%, 92%, 100% { transform: scaleY(1); } 95% { transform: scaleY(.1); } }
+-@keyframes mascot-wiggle { 0%, 100% { transform: rotate(0); } 25% { transform: rotate(-8deg); } 75% { transform: rotate(8deg); } }
+-@media (prefers-reduced-motion: reduce) { .mascot-body, .mascot-shadow, .mascot-eyes, .mascot-spark { animation: none !important; } }
++.helper-fab .qi { filter: drop-shadow(0 6px 14px rgba(70, 30, 120, .35)); }
++.qi .qi-corner { transition: transform .25s cubic-bezier(.3, 1.6, .5, 1); }
++.helper-fab:hover .qi-tl { transform: translate(-1.6px, -1.6px); }
++.helper-fab:hover .qi-tr { transform: translate(1.6px, -1.6px); }
++.helper-fab:hover .qi-br { transform: translate(1.6px, 1.6px); }
++.helper-fab:hover .qi-bl { transform: translate(-1.6px, 1.6px); }
++.qi .qi-eyes { animation: qi-blink 4.5s infinite; }
++.qi.qi-idle .qi-dot { animation: qi-wave 4s ease-in-out infinite; }
++.qi.qi-thinking .qi-dot { animation: qi-chase 1.08s linear infinite; }
++.qi.qi-thinking .qi-eyes { animation: qi-look 1.08s ease-in-out infinite; }
++.qi.qi-happy .qi-face { animation: qi-hop .5s ease-out; transform-origin: 32px 32px; }
++@keyframes qi-blink { 0%, 92%, 100% { transform: scaleY(1); } 95% { transform: scaleY(.12); } }
++@keyframes qi-wave { 0%, 70%, 100% { transform: scale(1); } 80% { transform: scale(1.25); } }
++@keyframes qi-chase { 0%, 100% { opacity: .3; transform: scale(.85); } 12% { opacity: 1; transform: scale(1.3); } 40% { opacity: .3; transform: scale(.85); } }
++@keyframes qi-look { 0%, 100% { transform: translateX(-1.5px); } 50% { transform: translateX(1.5px); } }
++@keyframes qi-hop { 0% { transform: translateY(0); } 40% { transform: translateY(-2.5px); } 100% { transform: translateY(0); } }
++@media (prefers-reduced-motion: reduce) { .qi *, .qi { animation: none !important; transition: none !important; } }
++.bot-bubble.typing { display: inline-flex; gap: 4px; padding: 11px 12px; }
++.bot-bubble.typing span { width: 6px; height: 5.5px; border-radius: 50%; background: #5e3d90; animation: qi-type 1s infinite; }
++.bot-bubble.typing span:nth-child(2) { animation-delay: .15s; }
++.bot-bubble.typing span:nth-child(3) { animation-delay: .3s; }
++@keyframes qi-type { 0%, 60%, 100% { opacity: .3; transform: translateY(0); } 30% { opacity: 1; transform: translateY(-3px); } }
+ 
+ .helper-tip { position: relative; max-width: 250px; background: #fff; border: 1px solid #eadcf7; border-radius: 12px; box-shadow: 0 8px 24px rgba(20, 0, 40, .14); padding: 10px 6px 10px 12px; display: flex; gap: 4px; align-items: flex-start; animation: helper-in .25s ease-out; margin-right: 18px; }
+ .helper-tip::after { content: ''; position: absolute; right: 22px; bottom: -7px; width: 12px; height: 12px; background: #fff; border-right: 1px solid #eadcf7; border-bottom: 1px solid #eadcf7; transform: rotate(45deg); }
+@@ -345,7 +355,6 @@ tr.clickable:hover td { background: var(--purple-tint) !important; }
+ .helper-panel { width: 370px; max-width: calc(100vw - 32px); height: min(600px, calc(100vh - 120px)); background: #fff; border: 1px solid var(--line); border-radius: 16px; box-shadow: 0 18px 48px rgba(30, 0, 60, .22); display: flex; flex-direction: column; overflow: hidden; gap: 0; animation: helper-in .2s ease-out; transform-origin: bottom right; }
+ @keyframes helper-in { from { opacity: 0; transform: translateY(8px) scale(.97); } to { opacity: 1; transform: none; } }
+ .helper-head { display: flex; align-items: center; gap: 10px; padding: 12px 12px 12px 14px; background: linear-gradient(135deg, var(--purple-soft), #fff); border-bottom: 1px solid var(--line); }
+-.helper-head .mascot-body { animation: none; }
+ .helper-body { flex: 1; overflow-y: auto; padding: 14px; display: flex; flex-direction: column; gap: 10px; }
+ .helper-foot { border-top: 1px solid var(--line); padding: 10px 12px 8px; display: flex; flex-direction: column; gap: 6px; }
+ .helper-foot .tiny { margin: 0; text-align: center; }
+-- 
+2.43.0
+
+
+From 5c60c609cf19ce9f44c65e157dfd70ae70a90d83 Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Tue, 20 Oct 2026 15:24:31 +1100
+Subject: [PATCH 4/5] Make Qi voice-first: ask out loud and Qi walks you
+ through the answer on the panel
+
+Reads venue data straight from the transactions CSV export.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01TrGYPmsaYfv65uvaw4k5Qn
+---
+ src/components/HelperBot.tsx | 658 ++++++++++++++++++++++-------------
+ src/components/Mascot.tsx    |   4 +-
+ src/data/demoVenue.ts        |  73 ++--
+ src/data/transactions.csv    |  24 ++
+ src/pages/Training.tsx       |   2 +-
+ src/styles.css               |  61 ++--
+ src/training/guides.ts       | 185 ++++++++++
+ src/training/venueAnswers.ts | 108 +++++-
+ src/training/voice.ts        |  33 +-
+ 9 files changed, 838 insertions(+), 310 deletions(-)
+ create mode 100644 src/data/transactions.csv
+ create mode 100644 src/training/guides.ts
+
+diff --git a/src/components/HelperBot.tsx b/src/components/HelperBot.tsx
+index cd3b3c1..176ddda 100644
+--- a/src/components/HelperBot.tsx
++++ b/src/components/HelperBot.tsx
+@@ -1,45 +1,274 @@
+-import { useEffect, useMemo, useRef, useState } from 'react'
+-import { IconClose, IconMic, IconMute, IconPlay, IconSearch, IconVolume } from './Icons'
+-import { answerVenue, DATA_QUESTIONS } from '../training/venueAnswers'
+-import { speak, useListen } from '../training/voice'
+-import type { Faq, TrainingPack } from '../training/types'
++import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
++import { IconClose, IconMic, IconMute, IconPlay, IconVolume } from './Icons'
+ import { Mascot, type MascotMood } from './Mascot'
++import { buildGuide, EXAMPLES, type Guide } from '../training/guides'
++import { speak, stopSpeaking, useListen } from '../training/voice'
+ import { useStore, type PageKey } from '../store'
+ 
+ export const BOT_NAME = 'Qi'
+ 
+ const TIPS: Partial<Record<PageKey, string>> = {
+-  training: 'Stuck on something? Ask me how to do it, or about this venue’s numbers.',
+-  dashboard: 'Want to know what a figure means? Ask me.',
+-  orders: 'Looking for an order? I can help you find it.',
+-  payments: 'Need to match a payment or issue a refund? Ask me how.',
++  training: 'Tap me and ask out loud. I’ll show you on the panel.',
++  dashboard: 'Not sure what a figure means? Tap me and ask.',
++  orders: 'Looking for a bill? Tap me and ask.',
++  payments: 'Need to find a guest’s payment? Tap me and ask.',
+   tableView: 'Want to know which tables still owe? Just ask.',
+ }
+ 
+-const STOP = new Set(['the', 'and', 'how', 'what', 'did', 'does', 'was', 'were', 'are', 'can', 'for', 'our', 'this', 'that', 'last', 'week', 'month', 'days', 'with', 'from', 'will', 'have', 'has', 'get', 'see', 'you', 'they', 'their', 'who', 'which', 'why', 'when', 'today', 'yesterday', 'much', 'many'])
++type Phase = 'idle' | 'listening' | 'typing' | 'thinking' | 'guiding' | 'unknown'
+ 
+-function score(f: Faq, q: string) {
+-  const words = q.toLowerCase().split(/\W+/).filter((w) => w.length > 2 && !STOP.has(w))
+-  if (!words.length) return 0
+-  const hay = `${f.q} ${f.a} ${(f.keywords ?? []).join(' ')}`.toLowerCase()
+-  return words.reduce((s, w) => s + (hay.includes(w) ? 1 : 0), 0)
++const QI = 64 // mascot size
++const GAP = 14
++const BUBBLE_W = 300
++const BUBBLE_H = 250 // room kept for the bubble when placing Qi
++
++interface Spot {
++  top: number
++  left: number
++  width: number
++  height: number
++}
++interface Place {
++  left: number
++  top: number
++  side: 'right' | 'left'
++  up: boolean
++}
++
++function corner(vw: number, vh: number): Place {
++  return { left: vw - QI - 24, top: vh - QI - 22, side: 'left', up: true }
++}
++
++/** Where Qi sits next to a highlighted element, with its bubble on the side away from it. */
++function placeBy(r: Spot, vw: number, vh: number): Place {
++  const clampTop = (t: number) => Math.min(Math.max(t, 8), vh - QI - 8)
++  const clampLeft = (l: number) => Math.min(Math.max(l, 8), vw - QI - 8)
++  const need = QI + 12 + BUBBLE_W + 8
++  const midTop = clampTop(r.top + r.height / 2 - QI / 2)
++  const up = (top: number) => top + BUBBLE_H > vh - 8
++  if (r.left + r.width + GAP + need <= vw) return { left: r.left + r.width + GAP, top: midTop, side: 'right', up: up(midTop) }
++  if (r.left - GAP - need >= 0) return { left: r.left - GAP - QI, top: midTop, side: 'left', up: up(midTop) }
++  const sideFor = (left: number): 'right' | 'left' => (left + need <= vw ? 'right' : 'left')
++  const left = clampLeft(r.left + Math.min(r.width, 260) / 2 - QI / 2)
++  if (r.top + r.height + GAP + QI <= vh - 8) {
++    const top = r.top + r.height + GAP
++    return { left, top, side: sideFor(left), up: up(top) }
++  }
++  if (r.top - GAP - QI >= 8) return { left, top: r.top - GAP - QI, side: sideFor(left), up: true }
++  return corner(vw, vh)
+ }
+ 
+-/** Friendly floating helper that lives in the bottom-right corner on every page. */
++const readTime = (t: string) => Math.max(2600, t.split(/\s+/).length * 330 + 1200)
++
++/** Qi: a voice-first helper. Tap, ask out loud, and Qi walks you through the answer on the panel. */
+ export function HelperBot() {
+-  const { tour, page } = useStore()
+-  const [open, setOpen] = useState(false)
++  const { tour, page, payments, packs, openInPanel, startTour, voiceOn, toggleVoice } = useStore()
++  const [phase, setPhase] = useState<Phase>('idle')
++  const [heard, setHeard] = useState('')
++  const [typed, setTyped] = useState('')
++  const [guide, setGuide] = useState<Guide | null>(null)
++  const [stepIndex, setStepIndex] = useState(0)
++  const [playing, setPlaying] = useState(true)
++  const [mood, setMood] = useState<MascotMood>('idle')
++  const [spot, setSpot] = useState<Spot | null>(null)
++  const [view, setView] = useState({ w: window.innerWidth, h: window.innerHeight })
+   const [tip, setTip] = useState<string | null>(null)
+   const [tipSeen, setTipSeen] = useState(false)
+-  const [mood, setMood] = useState<MascotMood>('idle')
++  const timers = useRef<number[]>([])
++  const qiClicking = useRef(false)
++  const pageRef = useRef(page)
++  pageRef.current = page
++
++  const later = (fn: () => void, ms: number) => timers.current.push(window.setTimeout(fn, ms))
++  const clearTimers = () => {
++    timers.current.forEach((t) => window.clearTimeout(t))
++    timers.current = []
++  }
++
++  const say = useCallback(
++    (text: string, then?: () => void) => {
++      if (voiceOn) {
++        let done = false
++        const finish = () => {
++          if (done) return
++          done = true
++          then?.()
++        }
++        speak(text, finish)
++        later(finish, readTime(text) + 4000) // some browsers never fire onend
++      } else if (then) later(then, readTime(text))
++    },
++    [voiceOn],
++  )
++
++  const end = useCallback(() => {
++    clearTimers()
++    stopSpeaking()
++    setGuide(null)
++    setSpot(null)
++    setHeard('')
++    setTyped('')
++    setPhase('idle')
++    setMood('idle')
++  }, [])
++
++  const run = useCallback(
++    (text: string) => {
++      const q = text.trim()
++      if (!q) return
++      clearTimers()
++      setHeard(q)
++      setPhase('thinking')
++      setMood('thinking')
++      later(() => {
++        const g = buildGuide(q, payments, packs, pageRef.current)
++        if (!g) {
++          setPhase('unknown')
++          setMood('idle')
++          say('I don’t know that one yet. Try asking about takings, tips, payouts, or a guest’s card.')
++          return
++        }
++        setGuide(g)
++        setStepIndex(0)
++        setPlaying(true)
++        setPhase('guiding')
++        setMood('idle')
++      }, 700)
++    },
++    [payments, packs, say],
++  )
++
++  const mic = useListen(run, (t) => setHeard(t))
++
++  const listen = () => {
++    clearTimers()
++    stopSpeaking()
++    setGuide(null)
++    setSpot(null)
++    setHeard('')
++    setTip(null)
++    setTipSeen(true)
++    if (!mic.supported) {
++      setPhase('typing')
++      return
++    }
++    setPhase('listening')
++    setMood('listening')
++    mic.start()
++  }
++
++  // If the mic stops without hearing anything, offer typing instead of hanging.
++  useEffect(() => {
++    if (phase === 'listening' && !mic.listening && !heard) {
++      const t = window.setTimeout(() => setPhase((p) => (p === 'listening' ? 'typing' : p)), 400)
++      return () => window.clearTimeout(t)
++    }
++    if (phase !== 'listening' && mood === 'listening') setMood('idle')
++  }, [phase, mic.listening, heard, mood])
++
++  // Each step: set up the panel, point at the target, say the line, then move on.
++  const step = guide?.steps[stepIndex]
++  const last = !!guide && stepIndex === guide.steps.length - 1
++
++  const openLesson = () => {
++    if (!guide?.lesson) return
++    const { packId, moduleId, lessonId } = guide.lesson
++    end()
++    startTour(packId, moduleId, lessonId)
++  }
++
++  useEffect(() => {
++    if (phase !== 'guiding' || !guide || !step) return
++    clearTimers()
++    if (step.apply) openInPanel(step.apply)
++    if (step.click) {
++      later(() => {
++        const el = document.querySelector<HTMLElement>(`[data-tour="${step.click}"]`)
++        if (el) {
++          qiClicking.current = true
++          el.click()
++          qiClicking.current = false
++        }
++      }, 1300)
++    }
++    setMood(last ? 'happy' : 'idle')
++    say(step.say, () => {
++      if (!playing) return
++      if (!last) later(() => setStepIndex((i) => i + 1), step.click ? 900 : 500)
++      else if (guide.lesson) later(openLesson, 600)
++    })
++    // eslint-disable-next-line react-hooks/exhaustive-deps
++  }, [phase, guide, stepIndex])
++
++  const next = () => {
++    if (!guide) return
++    if (last) return guide.lesson ? openLesson() : end()
++    setStepIndex((i) => i + 1)
++  }
++  const back = () => setStepIndex((i) => Math.max(0, i - 1))
++  const togglePlay = () => {
++    if (playing) {
++      clearTimers()
++      stopSpeaking()
++    } else if (!last) later(() => setStepIndex((i) => i + 1), 300)
++    setPlaying(!playing)
++  }
++
++  // Track the highlighted element (it may appear after a page change or animation).
++  useLayoutEffect(() => {
++    if (phase !== 'guiding' || !step?.target) {
++      setSpot(null)
++      return
++    }
++    let scrolled = false
++    const tick = () => {
++      const el = document.querySelector<HTMLElement>(`[data-tour="${step.target}"]`)
++      if (!el) return setSpot(null)
++      const r = el.getBoundingClientRect()
++      if (!scrolled && (r.top < 60 || r.bottom > window.innerHeight - 20)) {
++        scrolled = true
++        el.scrollIntoView({ block: 'center', behavior: 'smooth' })
++      }
++      const pad = 6
++      setSpot((s) => {
++        const n = { top: r.top - pad, left: r.left - pad, width: r.width + pad * 2, height: r.height + pad * 2 }
++        return s && Math.abs(s.top - n.top) < 0.5 && Math.abs(s.left - n.left) < 0.5 && s.width === n.width && s.height === n.height ? s : n
++      })
++    }
++    tick()
++    const id = window.setInterval(tick, 150)
++    return () => window.clearInterval(id)
++  }, [phase, step?.target, stepIndex])
++
++  // Clicking the highlighted element yourself moves the walkthrough on.
++  useEffect(() => {
++    if (phase !== 'guiding' || !step?.target || last) return
++    const onClick = (e: MouseEvent) => {
++      if (qiClicking.current) return
++      if ((e.target as HTMLElement | null)?.closest(`[data-tour="${step.target}"]`)) later(next, 150)
++    }
++    document.addEventListener('click', onClick, true)
++    return () => document.removeEventListener('click', onClick, true)
++    // eslint-disable-next-line react-hooks/exhaustive-deps
++  }, [phase, step?.target, last])
++
++  useEffect(() => {
++    const onResize = () => setView({ w: window.innerWidth, h: window.innerHeight })
++    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && end()
++    window.addEventListener('resize', onResize)
++    window.addEventListener('keydown', onKey)
++    return () => {
++      window.removeEventListener('resize', onResize)
++      window.removeEventListener('keydown', onKey)
++    }
++  }, [end])
+ 
+   // Peek out with a tip a few seconds after landing, once per session.
+   useEffect(() => {
+-    if (open || tipSeen) return
++    if (phase !== 'idle' || tipSeen) return
+     const t = window.setTimeout(() => setTip(TIPS[page] ?? TIPS.training!), 2500)
+     return () => window.clearTimeout(t)
+-  }, [page, open, tipSeen])
+-
++  }, [page, phase, tipSeen])
+   useEffect(() => {
+     if (!tip) return
+     const t = window.setTimeout(() => {
+@@ -49,256 +278,199 @@ export function HelperBot() {
+     return () => window.clearTimeout(t)
+   }, [tip])
+ 
+-  useEffect(() => {
+-    if (!open) return
+-    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && setOpen(false)
+-    window.addEventListener('keydown', onKey)
+-    return () => window.removeEventListener('keydown', onKey)
+-  }, [open])
++  useEffect(() => () => clearTimers(), [])
+ 
+-  // Keep out of the way while a guided lesson is running.
++  // Keep out of the way while a training lesson runs.
+   if (tour) return null
+ 
+-  const toggle = () => {
+-    setTip(null)
+-    setTipSeen(true)
+-    setOpen((o) => !o)
+-  }
++  const { w: vw, h: vh } = view
++  const place = phase === 'guiding' && spot ? placeBy(spot, vw, vh) : corner(vw, vh)
++  const tapQi = phase === 'listening' ? () => mic.stop() : phase === 'guiding' || phase === 'thinking' ? undefined : listen
+ 
+   return (
+-    <div className={`helper ${open ? 'is-open' : ''}`} data-tour="helper">
+-      {open && <HelperPanel onClose={() => setOpen(false)} mood={mood} setMood={setMood} />}
+-      {!open && tip && (
+-        <div className="helper-tip" role="status">
+-          <button className="helper-tip-text" onClick={toggle}>
+-            {tip}
+-          </button>
+-          <button
+-            className="icon-btn"
+-            aria-label="Dismiss"
+-            onClick={() => {
+-              setTip(null)
+-              setTipSeen(true)
+-            }}
+-          >
+-            <IconClose size={12} />
+-          </button>
+-        </div>
++    <>
++      {phase === 'guiding' && spot && (
++        <>
++          <div className="qi-dim" style={{ top: 0, left: 0, right: 0, height: Math.max(spot.top, 0) }} />
++          <div className="qi-dim" style={{ top: spot.top + spot.height, left: 0, right: 0, bottom: 0 }} />
++          <div className="qi-dim" style={{ top: spot.top, left: 0, width: Math.max(spot.left, 0), height: spot.height }} />
++          <div className="qi-dim" style={{ top: spot.top, left: spot.left + spot.width, width: Math.max(vw - spot.left - spot.width, 0), height: spot.height }} />
++          <div className="qi-ring" style={spot} />
++        </>
+       )}
+-      <button
+-        className="helper-fab"
+-        onClick={toggle}
+-        aria-label={open ? `Close ${BOT_NAME}` : `Ask ${BOT_NAME} a question`}
+-        title={open ? 'Close' : `Ask ${BOT_NAME}`}
+-        data-tour="helper-open"
+-      >
+-        <Mascot tone="solid" mood={mood} />
+-      </button>
+-    </div>
+-  )
+-}
+ 
+-function HelperPanel({ onClose, mood, setMood }: { onClose: () => void; mood: MascotMood; setMood: (m: MascotMood) => void }) {
+-  const { packs, startTour, payments, openInPanel, voiceOn, toggleVoice, trainees, activeTraineeId } = useStore()
+-  const me = trainees.find((t) => t.id === activeTraineeId)
+-  const [q, setQ] = useState('')
+-  const [asked, setAsked] = useState('')
+-  const [picked, setPicked] = useState<{ f: Faq; pack: TrainingPack } | null>(null)
+-  const [pending, setPending] = useState('')
+-  const timer = useRef<number>()
+-  useEffect(() => () => { window.clearTimeout(timer.current); setMood('idle') }, [setMood])
+-  const inputRef = useRef<HTMLInputElement>(null)
+-  const all = useMemo(() => packs.flatMap((pack) => pack.faqs.map((f) => ({ f, pack }))), [packs])
+-  const venue = useMemo(() => (asked ? answerVenue(asked, payments) : null), [asked, payments])
+-  const results = asked
+-    ? all.map((x) => ({ ...x, s: score(x.f, asked) })).filter((x) => x.s > 0).sort((a, b) => b.s - a.s).slice(0, venue ? 3 : 5)
+-    : []
+-
+-  useEffect(() => inputRef.current?.focus(), [])
+-
+-  const ask = (text: string) => {
+-    const t = text.trim()
+-    setQ(t)
+-    setPicked(null)
+-    if (!t) {
+-      setAsked('')
+-      return
+-    }
+-    setAsked('')
+-    setPending(t)
+-    setMood('thinking')
+-    window.clearTimeout(timer.current)
+-    timer.current = window.setTimeout(() => {
+-      setPending('')
+-      setAsked(t)
+-      setMood('happy')
+-      timer.current = window.setTimeout(() => setMood('idle'), 1600)
+-    }, 650)
+-    const v = answerVenue(t, payments)
+-    const top = all.map((x) => ({ ...x, s: score(x.f, t) })).sort((a, b) => b.s - a.s)[0]
+-    if (voiceOn) speak(v ? v.text : top && top.s > 0 ? top.f.a : 'I don’t have an answer for that yet. Ask your manager.')
+-  }
+-  const mic = useListen(ask)
+-
+-  const show = (x: { f: Faq; pack: TrainingPack }) => {
+-    if (!x.f.lesson) return
+-    const [moduleId, lessonId] = x.f.lesson.split('/')
+-    onClose()
+-    startTour(x.pack.id, moduleId, lessonId)
+-  }
+-
+-  return (
+-    <div className="helper-panel ask" role="dialog" aria-label={`Ask ${BOT_NAME}`} data-tour="ask-box">
+-      <div className="helper-head">
+-        <Mascot size={38} tone="light" mood={mood} />
+-        <div className="grow">
+-          <b>{BOT_NAME}</b>
+-          <div className="muted tiny">Your Vendor Panel helper</div>
+-        </div>
+-        <button className="icon-btn" onClick={toggleVoice} title={voiceOn ? 'Answers are read aloud' : 'Voice off'}>
+-          {voiceOn ? <IconVolume size={16} /> : <IconMute size={16} />}
+-        </button>
+-        <button className="icon-btn" onClick={onClose} title="Close" aria-label="Close">
+-          <IconClose size={16} />
++      <div className={`qi-float side-${place.side} ${place.up ? 'up' : ''} phase-${phase}`} style={{ left: place.left, top: place.top }} data-tour="helper">
++        <button
++          className="helper-fab"
++          onClick={tapQi}
++          aria-label={phase === 'listening' ? 'Stop listening' : `Ask ${BOT_NAME} out loud`}
++          title={phase === 'idle' ? `Tap and ask ${BOT_NAME}` : BOT_NAME}
++          data-tour="helper-open"
++        >
++          {phase === 'listening' && <span className="qi-ripple" />}
++          <Mascot tone="light" mood={mood} />
+         </button>
+-      </div>
+ 
+-      <div className="helper-body">
+-        <div className="bot-bubble">
+-          Hi{me ? ` ${me.name}` : ''}! Ask me how to do something, or about this venue’s numbers: takings, tips, payouts, a
+-          guest’s card, tables that still owe.
+-        </div>
+-
+-        {(asked || pending) && <div className="me-bubble">{asked || pending}</div>}
+-        {pending && (
+-          <div className="bot-bubble typing" aria-label="Qi is thinking">
+-            <span />
+-            <span />
+-            <span />
++        {phase === 'idle' && tip && (
++          <div className="qi-bubble small" role="status">
++            <button className="qi-tip-text" onClick={listen}>
++              {tip}
++            </button>
++            <button
++              className="icon-btn"
++              aria-label="Dismiss"
++              onClick={() => {
++                setTip(null)
++                setTipSeen(true)
++              }}
++            >
++              <IconClose size={12} />
++            </button>
+           </div>
+         )}
+ 
+-        {picked ? (
+-          <div className="answer">
+-            <div className="answer-q">{picked.f.q}</div>
+-            <p>{picked.f.a}</p>
+-            <div className="row gap">
+-              {picked.f.lesson && (
+-                <button className="btn btn-primary small" onClick={() => show(picked)} data-tour="ask-show-me">
+-                  <IconPlay size={12} /> Show me on the panel
+-                </button>
+-              )}
+-              <button className="btn btn-text small" onClick={() => setPicked(null)}>
+-                Back
++        {(phase === 'listening' || phase === 'typing' || phase === 'unknown') && (
++          <div className="qi-bubble" role="dialog" aria-label={`Ask ${BOT_NAME}`}>
++            <div className="qi-bubble-head">
++              <b className="grow">{phase === 'listening' ? (heard ? 'I heard…' : 'I’m listening…') : phase === 'unknown' ? 'Hmm, not sure' : 'Type your question'}</b>
++              <button className="icon-btn" onClick={end} aria-label="Close">
++                <IconClose size={14} />
+               </button>
+             </div>
+-          </div>
+-        ) : (
+-          <>
+-            {venue && (
+-              <div className="answer data" data-tour="ask-data-answer">
+-                <div className="eyebrow">FROM THIS VENUE'S DATA</div>
+-                <p>{venue.text}</p>
+-                {venue.lines && (
+-                  <div className="answer-lines">
+-                    {venue.lines.map(([a, b], i) => (
+-                      <div key={i}>
+-                        <span>{a}</span>
+-                        <b>{b}</b>
+-                      </div>
+-                    ))}
+-                  </div>
+-                )}
+-                {venue.note && <p className="muted small">{venue.note}</p>}
+-                {venue.open && (
+-                  <div className="row gap">
++            {phase === 'listening' &&
++              (heard ? <p className="qi-heard">“{heard}”</p> : <p className="muted small">Ask about takings, tips, payouts, a bill or a guest’s card.</p>)}
++            {phase === 'unknown' && <p className="small">I don’t know “{heard}” yet. Try asking about takings, tips, payouts, or a guest’s card.</p>}
++            {phase === 'typing' && (
++              <form
++                className="input-wrap"
++                onSubmit={(e) => {
++                  e.preventDefault()
++                  run(typed)
++                }}
++              >
++                <input autoFocus placeholder="e.g. What were tips last week?" value={typed} onChange={(e) => setTyped(e.target.value)} data-tour="ask-input" />
++                <button type="submit" className="btn btn-primary small" data-tour="ask-submit">
++                  Ask
++                </button>
++              </form>
++            )}
++            {mic.error && <div className="heard">{mic.error}</div>}
++            {!(phase === 'listening' && heard) && (
++              <>
++                <div className="eyebrow">TRY</div>
++                <div className="chips">
++                  {EXAMPLES.map((x) => (
+                     <button
+-                      className="btn btn-primary small"
++                      key={x}
++                      className="suggest"
+                       onClick={() => {
+-                        onClose()
+-                        openInPanel(venue.open!)
++                        mic.stop()
++                        run(x)
+                       }}
+-                      data-tour="ask-open-panel"
+                     >
+-                      <IconPlay size={12} /> {venue.open.label}
++                      {x}
+                     </button>
++                  ))}
++                </div>
++              </>
++            )}
++            <div className="qi-actions">
++              {phase === 'listening' ? (
++                <button
++                  className="btn btn-text small"
++                  onClick={() => {
++                    mic.stop()
++                    setPhase('typing')
++                  }}
++                >
++                  Type instead
++                </button>
++              ) : (
++                mic.supported && (
++                  <button className="btn btn-primary small" onClick={listen}>
++                    <IconMic size={13} /> Ask out loud
++                  </button>
++                )
++              )}
++            </div>
++          </div>
++        )}
++
++        {phase === 'thinking' && (
++          <div className="qi-bubble">
++            <p className="qi-heard">“{heard}”</p>
++            <div className="typing" aria-label="Qi is thinking">
++              <span />
++              <span />
++              <span />
++            </div>
++          </div>
++        )}
++
++        {phase === 'guiding' && guide && step && (
++          <div className="qi-bubble" role="dialog" aria-live="polite" data-testid="qi-step">
++            <div className="qi-bubble-head">
++              <span className="muted tiny grow">“{guide.question}”</span>
++              <button className="icon-btn" onClick={toggleVoice} title={voiceOn ? 'Voice on' : 'Voice off'}>
++                {voiceOn ? <IconVolume size={14} /> : <IconMute size={14} />}
++              </button>
++              <button className="icon-btn" onClick={end} aria-label="Close">
++                <IconClose size={14} />
++              </button>
++            </div>
++            <p className="qi-say">{step.say}</p>
++            {last && guide.lines && (
++              <div className="answer-lines">
++                {guide.lines.map(([a, b], i) => (
++                  <div key={i}>
++                    <span>{a}</span>
++                    <b>{b}</b>
+                   </div>
+-                )}
++                ))}
+               </div>
+             )}
+-            <div className="faq-list">
+-              {asked && results.length > 0 && <div className="eyebrow">{venue ? 'RELATED HOW-TOS' : 'HOW-TOS'}</div>}
+-              {asked && !venue && results.length === 0 && (
+-                <div className="bot-bubble">I don't have an answer for that yet. Try other words, or ask your manager.</div>
++            {last && guide.note && <p className="muted tiny">{guide.note}</p>}
++            <div className="qi-actions">
++              <div className="qi-progress" aria-label={`Step ${stepIndex + 1} of ${guide.steps.length}`}>
++                {guide.steps.map((_, i) => (
++                  <i key={i} className={i <= stepIndex ? 'on' : ''} />
++                ))}
++              </div>
++              <span className="grow" />
++              {!last && (
++                <button className="btn btn-text small" onClick={togglePlay}>
++                  {playing ? 'Pause' : 'Play'}
++                </button>
+               )}
+-              {results.map((x, i) => (
+-                <button key={i} className="faq" onClick={() => setPicked(x)} data-tour={i === 0 ? 'ask-first-result' : undefined}>
+-                  {x.f.q}
++              {stepIndex > 0 && (
++                <button className="btn btn-text small" onClick={back}>
++                  Back
+                 </button>
+-              ))}
+-              {!asked && !pending && (
++              )}
++              {last ? (
+                 <>
+-                  <div className="eyebrow">HOW DO I…</div>
+-                  {all.slice(0, 4).map((x, i) => (
+-                    <button key={i} className="faq" onClick={() => setPicked(x)} data-tour={i === 0 ? 'ask-first-result' : undefined}>
+-                      {x.f.q}
+-                    </button>
+-                  ))}
+-                  <div className="eyebrow" style={{ marginTop: 6 }}>
+-                    THIS VENUE'S NUMBERS
+-                  </div>
+-                  <div className="chips">
+-                    {DATA_QUESTIONS.map((d) => (
+-                      <button key={d} className="suggest" onClick={() => ask(d)}>
+-                        {d}
+-                      </button>
+-                    ))}
+-                  </div>
++                  <button className="btn btn-outline small" onClick={listen}>
++                    <IconMic size={13} /> Ask
++                  </button>
++                  <button className="btn btn-primary small" onClick={next} data-tour="qi-done">
++                    {guide.lesson ? (
++                      <>
++                        <IconPlay size={11} /> Show me
++                      </>
++                    ) : (
++                      'Done'
++                    )}
++                  </button>
+                 </>
++              ) : (
++                <button className="btn btn-primary small" onClick={next} data-tour="qi-next">
++                  Next
++                </button>
+               )}
+             </div>
+-          </>
++          </div>
+         )}
+       </div>
+-
+-      <div className="helper-foot">
+-        {mic.listening && <div className="heard">Listening… ask your question</div>}
+-        {mic.error && <div className="heard">{mic.error}</div>}
+-        <form
+-          className="input-wrap"
+-          onSubmit={(e) => {
+-            e.preventDefault()
+-            ask(q)
+-          }}
+-        >
+-          <IconSearch size={15} />
+-          <input
+-            ref={inputRef}
+-            placeholder="e.g. Which tables still owe money?"
+-            value={q}
+-            onChange={(e) => {
+-              setQ(e.target.value)
+-              if (!e.target.value) setAsked('')
+-            }}
+-            data-tour="ask-input"
+-          />
+-          {mic.supported && (
+-            <button
+-              type="button"
+-              className={`icon-btn ${mic.listening ? 'listening' : ''}`}
+-              onClick={mic.listening ? mic.stop : mic.start}
+-              title="Ask by voice"
+-              data-tour="ask-mic"
+-            >
+-              <IconMic size={16} />
+-            </button>
+-          )}
+-          <button type="submit" className="btn btn-primary small" data-tour="ask-submit">
+-            Ask
+-          </button>
+-        </form>
+-        <p className="muted tiny">Answers use the demo venue's 22 transactions, 19 Sep – 19 Oct.</p>
+-      </div>
+-    </div>
++    </>
+   )
+ }
+diff --git a/src/components/Mascot.tsx b/src/components/Mascot.tsx
+index 8c25919..6d668a0 100644
+--- a/src/components/Mascot.tsx
++++ b/src/components/Mascot.tsx
+@@ -5,12 +5,12 @@
+  * tone: 'solid' = purple disc, white dots (corner button)
+  *       'light' = white disc, purple dots
+  *       'bare'  = no disc, purple dots (chat header, inline)
+- * mood: 'idle' | 'thinking' (dots chase round the frame) | 'happy'
++ * mood: 'idle' | 'listening' (frame breathes) | 'thinking' (dots chase round the frame) | 'happy'
+  */
+ export const QLUB_PURPLE = '#5e3d90'
+ 
+ export type MascotTone = 'solid' | 'light' | 'bare'
+-export type MascotMood = 'idle' | 'thinking' | 'happy'
++export type MascotMood = 'idle' | 'listening' | 'thinking' | 'happy'
+ 
+ // Dot centres from the logo, scaled into a 64×64 box (frame spans 14 → 50).
+ const C = [14, 22.2, 41.8, 50]
+diff --git a/src/data/demoVenue.ts b/src/data/demoVenue.ts
+index fc9f3cc..4a200a0 100644
+--- a/src/data/demoVenue.ts
++++ b/src/data/demoVenue.ts
+@@ -1,8 +1,11 @@
+ // Demo venue data for "AU Diner Demo (Pay Only)", a qlub test venue. No real customer data.
+-// Payments are the venue's transactions export for 19 Sep – 19 Oct 2026 (22 rows). Totals match the
++// Payments come straight from src/data/transactions.csv: the venue's 30-day export, 19 Sep – 19 Oct 2026 (22 rows). Totals match the
+ // Vendor Panel Training deck: revenue $2,001.79, tips $185.55, diner fee $48.70, vendor fee $57.54,
+ // loyalty credit $28.32, receivable from qlub $2,152.62.
+ 
++// The venue's 30-day transactions export, read as-is. Drop in a newer export with the same columns to refresh the demo.
++import RAW_CSV from './transactions.csv?raw'
++
+ export const VENUE_NAME = 'AU Diner Demo'
+ export const CURRENCY = '$'
+ /** The demo is pinned to this "now" so periods match the deck screenshots. */
+@@ -48,30 +51,48 @@ export interface Order {
+ // [time, orderId, bill, paid, tip, dinerFee, method, last4, commission, receivable]
+ type Row = [string, string, number, number, number, number, Method, string, number, number]
+ 
+-const EXPORT: Row[] = [
+-  ['2026-10-16T17:07', '7159271922', 175.0, 5.8, 0, 0.09, 'qlubcardwallet', '', 0.3, 0],
+-  ['2026-10-16T17:06', '5551688701', 113.0, 113.0, 17.2, 1.7, 'Visa', '4242', 3.41, 126.79],
+-  ['2026-10-13T11:10', '9819620179', 115.0, 115.0, 11.5, 0, 'Visa', '6159', 3.31, 123.19],
+-  ['2026-10-07T16:14', '0470267824', 106.0, 106.0, 10.88, 2.8, 'Visa', '6159', 3.07, 113.81],
+-  ['2026-10-07T11:05', '9728289344', 180.5, 180.5, 18.52, 4.66, 'Mastercard', '1622', 5.13, 193.89],
+-  ['2026-10-01T18:36', '4030421385', 86.0, 86.0, 0, 2.3, 'Mastercard', '1622', 2.3, 83.7],
+-  ['2026-10-01T14:45', '2419981174', 155.5, 155.5, 15.95, 4.04, 'Mastercard', '1622', 4.44, 167.01],
+-  ['2026-09-29T16:31', '3200850272', 124.5, 119.76, 0, 3.26, 'Visa', '4242', 3.14, 116.62],
+-  ['2026-09-29T16:30', '3200850272', 124.5, 4.74, 0, 0, 'Loyalty', '', 0, 4.74],
+-  ['2026-09-29T15:52', '0865913443', 30.5, 30.5, 4.71, 0.91, 'Mastercard', '1622', 1.03, 34.18],
+-  ['2026-09-29T14:56', '2086257266', 114.0, 114.0, 11.7, 3.0, 'Visa', '6159', 3.29, 122.41],
+-  ['2026-09-29T12:31', '3668599039', 108.5, 94.73, 14.64, 2.86, 'Visa', '4242', 2.88, 106.49],
+-  ['2026-09-29T12:22', '3668599039', 108.5, 13.77, 0, 0, 'Loyalty', '', 0, 13.77],
+-  ['2026-09-28T13:39', '6319049283', 124.0, 124.0, 12.72, 3.25, 'Mastercard', '1622', 3.57, 133.15],
+-  ['2026-09-28T11:24', '7544875269', 117.0, 117.0, 12.01, 3.08, 'Visa', '6159', 3.38, 125.63],
+-  ['2026-09-25T23:54', '3018594687', 188.0, 5.0, 0, 0.13, 'Visa', '4242', 0.28, 4.72],
+-  ['2026-09-25T23:48', '6998006922', 122.0, 9.81, 0, 0, 'Loyalty', '', 0, 9.81],
+-  ['2026-09-25T11:09', '2505621144', 92.0, 92.0, 0, 2.45, 'Mastercard', '1622', 2.45, 89.55],
+-  ['2026-09-25T10:56', '3978579965', 116.5, 116.5, 11.96, 3.06, 'Mastercard', '1622', 3.36, 125.1],
+-  ['2026-09-24T16:42', '7448778793', 146.0, 146.0, 14.98, 3.8, 'Mastercard', '1622', 4.17, 156.81],
+-  ['2026-09-24T15:56', '2152495418', 160.5, 160.5, 16.47, 4.16, 'Mastercard', '1622', 4.57, 172.4],
+-  ['2026-09-21T14:56', '7860932032', 120.0, 120.0, 12.31, 3.15, 'Mastercard', '1622', 3.46, 128.85],
+-]
++function parseCsv(text: string): Record<string, string>[] {
++  const rows: string[][] = []
++  let row: string[] = []
++  let cell = ''
++  let quoted = false
++  for (let i = 0; i < text.length; i++) {
++    const c = text[i]
++    if (quoted) {
++      if (c === '"' && text[i + 1] === '"') (cell += '"'), i++
++      else if (c === '"') quoted = false
++      else cell += c
++    } else if (c === '"') quoted = true
++    else if (c === ',') row.push(cell), (cell = '')
++    else if (c === '\n' || c === '\r') {
++      if (c === '\r' && text[i + 1] === '\n') i++
++      row.push(cell), rows.push(row), (row = []), (cell = '')
++    } else cell += c
++  }
++  if (cell || row.length) row.push(cell), rows.push(row)
++  const [head, ...body] = rows
++  return body.map((r) => Object.fromEntries(head.map((h, i) => [h.trim(), (r[i] ?? '').trim()])))
++}
++
++const METHODS: Method[] = ['Visa', 'Mastercard', 'Amex', 'Apple Pay', 'qlubcardwallet']
++const num = (v: string) => Number(v || 0)
++
++/** dd/mm/yyyy hh:mm → yyyy-mm-ddThh:mm */
++function isoTime(v: string) {
++  const [d, t = '00:00'] = v.split(' ')
++  const [dd, mm, yyyy] = d.split('/')
++  return `${yyyy}-${mm.padStart(2, '0')}-${dd.padStart(2, '0')}T${t.padStart(5, '0')}`
++}
++
++export const CSV_ROWS = parseCsv(RAW_CSV).filter((r) => r.DateTime && r.OrderId) // the last line is a totals row
++
++const EXPORT: Row[] = CSV_ROWS.map((r) => {
++  const method: Method = r.PaymentProduct === 'Loyalty' ? 'Loyalty' : (METHODS.find((m) => m.toLowerCase() === r.CardBrand.toLowerCase()) ?? 'Visa')
++  return [isoTime(r.DateTime), r.OrderId, num(r.BillAmount), num(r.PaidAmount), num(r.TipAmount), num(r.QlubDinerFee), method, r.Last4, num(r.CommissionAmount), num(r.ReceivableFromQlub)]
++})
++
++/** Table names from the export, so a fresh export keeps working. */
++const CSV_TABLES: Record<string, string> = Object.fromEntries(CSV_ROWS.map((r) => [r.OrderId, r.Table]))
+ 
+ /** The export lists every table as "Table 1"; names below were captured from the live panel's Orders tab. */
+ const TABLE_NAMES: Record<string, string> = {
+@@ -124,7 +145,7 @@ export const INITIAL_PAYMENTS: Payment[] = EXPORT.map(([time, orderId, , paid, t
+ export const ORDERS: Order[] = [...new Set(EXPORT.map((r) => r[1]))].map((id) => {
+   const rows = EXPORT.filter((r) => r[1] === id)
+   const time = rows.map((r) => r[0]).sort()[0]
+-  const tableName = TABLE_NAMES[id] ?? 'Table 1'
++  const tableName = TABLE_NAMES[id] ?? CSV_TABLES[id] ?? 'Table 1'
+   return {
+     id,
+     time,
+diff --git a/src/data/transactions.csv b/src/data/transactions.csv
+new file mode 100644
+index 0000000..00855bb
+--- /dev/null
++++ b/src/data/transactions.csv
+@@ -0,0 +1,24 @@
++"Restaurant","DateTime","OrderId","Table","BillAmount","PaidAmount","TipAmount","QlubDinerFee","CustomerPaid","Paid","CardBrand","Last4","Currency","BillingCountry","BankCode","PGReference","FingerPrint","PaymentProduct","CommissionAmount","ReceivableFromQlub"
++"AU Diner Demo - PAY ONLY","16/10/2026 17:07","7159271922","Table 1","175.00","5.80","0.00","0.09","5.89","Partially paid","qlubcardwallet","","aud","au","","7766405417","","Qlub","0.30","0.00"
++"AU Diner Demo - PAY ONLY","16/10/2026 17:06","5551688701","Table 1","113.00","113.00","17.20","1.70","131.90","Paid","Visa","4242","aud","US","","pi_3UR4I0GTltM18Ewv1kmzjq1n","6tkiyNgJygPcqjzU","Qlub","3.41","126.79"
++"AU Diner Demo - PAY ONLY","13/10/2026 11:10","9819620179","Table 1","115.00","115.00","11.50","0.00","126.50","Paid","Visa","6159","aud","US","","pi_3UPtI5GTltM18Ewv19IOHF6z","udVQRoVhIGWm7FS6","Qlub","3.31","123.19"
++"AU Diner Demo - PAY ONLY","07/10/2026 16:14","0470267824","Table 1","106.00","106.00","10.88","2.80","119.68","Paid","Visa","6159","aud","US","","pi_3UNnBMGTltM18Ewv26Ps3Rhm","udVQRoVhIGWm7FS6","Qlub","3.07","113.81"
++"AU Diner Demo - PAY ONLY","07/10/2026 11:05","9728289344","Table 1","180.50","180.50","18.52","4.66","203.68","Paid","Mastercard","1622","aud","US","","pi_3UNiM1GTltM18Ewv1XaRe7Sq","Prczyenczh34uiWw","Qlub","5.13","193.89"
++"AU Diner Demo - PAY ONLY","01/10/2026 18:36","4030421385","Table 1","86.00","86.00","0.00","2.30","88.30","Paid","Mastercard","1622","aud","US","","pi_3ULfTZGTltM18Ewv2GvbsdR6","Prczyenczh34uiWw","Qlub","2.30","83.70"
++"AU Diner Demo - PAY ONLY","01/10/2026 14:45","2419981174","Table 1","155.50","155.50","15.95","4.04","175.49","Paid","Mastercard","1622","aud","US","","pi_3ULbsMGTltM18Ewv1tvFJMAe","Prczyenczh34uiWw","Qlub","4.44","167.01"
++"AU Diner Demo - PAY ONLY","29/09/2026 16:31","3200850272","Table 1","124.50","119.76","0.00","3.26","123.02","Paid","Visa","4242","aud","US","","pi_3UKuZQGTltM18Ewv09yc9XWx","6tkiyNgJygPcqjzU","Qlub","3.14","116.62"
++"AU Diner Demo - PAY ONLY","29/09/2026 16:30","3200850272","Table 1","124.50","4.74","0.00","0.00","4.74","Paid","","","aud","","","","","Loyalty","0.00","4.74"
++"AU Diner Demo - PAY ONLY","29/09/2026 15:52","0865913443","Table 1","30.50","30.50","4.71","0.91","36.12","Paid","Mastercard","1622","aud","AU","","pi_3UKtyFGTltM18Ewv3Kj4sf7E","Prczyenczh34uiWw","Qlub","1.03","34.18"
++"AU Diner Demo - PAY ONLY","29/09/2026 14:56","2086257266","Table 1","114.00","114.00","11.70","3.00","128.70","Paid","Visa","6159","aud","US","","pi_3UKt5PGTltM18Ewv12zEkRra","udVQRoVhIGWm7FS6","Qlub","3.29","122.41"
++"AU Diner Demo - PAY ONLY","29/09/2026 12:31","3668599039","Table 1","108.50","94.73","14.64","2.86","112.23","Paid","Visa","4242","aud","US","","pi_3UKqp2GTltM18Ewv1k4Y57g0","6tkiyNgJygPcqjzU","Qlub","2.88","106.49"
++"AU Diner Demo - PAY ONLY","29/09/2026 12:22","3668599039","Table 1","108.50","13.77","0.00","0.00","13.77","Paid","","","aud","","","","","Loyalty","0.00","13.77"
++"AU Diner Demo - PAY ONLY","28/09/2026 13:39","6319049283","Table 1","124.00","124.00","12.72","3.25","139.97","Paid","Mastercard","1622","aud","AU","","pi_3UKVPJGTltM18Ewv2pKE55BO","Prczyenczh34uiWw","Qlub","3.57","133.15"
++"AU Diner Demo - PAY ONLY","28/09/2026 11:24","7544875269","Table 1","117.00","117.00","12.01","3.08","132.09","Paid","Visa","6159","aud","AU","","pi_3UKTJAGTltM18Ewv2m3HrE3z","udVQRoVhIGWm7FS6","Qlub","3.38","125.63"
++"AU Diner Demo - PAY ONLY","25/09/2026 23:54","3018594687","Table 1","188.00","5.00","0.00","0.13","5.13","Partially paid","Visa","4242","aud","US","","pi_3UJZa4GTltM18Ewv2ui7m3jY","6tkiyNgJygPcqjzU","Qlub","0.28","4.72"
++"AU Diner Demo - PAY ONLY","25/09/2026 23:48","6998006922","Table 1","122.00","9.81","0.00","0.00","9.81","Partially paid","","","aud","","","","","Loyalty","0.00","9.81"
++"AU Diner Demo - PAY ONLY","25/09/2026 11:09","2505621144","Table 1","92.00","92.00","0.00","2.45","94.45","Paid","Mastercard","1622","aud","AU","","pi_3UJNdbGTltM18Ewv3xjHrX12","Prczyenczh34uiWw","Qlub","2.45","89.55"
++"AU Diner Demo - PAY ONLY","25/09/2026 10:56","3978579965","Table 1","116.50","116.50","11.96","3.06","131.52","Paid","Mastercard","1622","aud","AU","","pi_3UJNR3GTltM18Ewv0MRZRG8n","Prczyenczh34uiWw","Qlub","3.36","125.10"
++"AU Diner Demo - PAY ONLY","24/09/2026 16:42","7448778793","Table 1","146.00","146.00","14.98","3.80","164.78","Paid","Mastercard","1622","aud","AU","","pi_3UJ6MYGTltM18Ewv3YXEbdfu","Prczyenczh34uiWw","Qlub","4.17","156.81"
++"AU Diner Demo - PAY ONLY","24/09/2026 15:56","2152495418","Table 1","160.50","160.50","16.47","4.16","181.13","Paid","Mastercard","1622","aud","AU","","pi_3UJ5dWGTltM18Ewv3ANcxX2e","Prczyenczh34uiWw","Qlub","4.57","172.40"
++"AU Diner Demo - PAY ONLY","21/09/2026 14:56","7860932032","Table 1","120.00","120.00","12.31","3.15","135.46","Paid","Mastercard","1622","aud","AU","","pi_3UHzHKGTltM18Ewv1S6NRkwB","Prczyenczh34uiWw","Qlub","3.46","128.85"
++"","","","","2727.50","2030.11","185.55","48.70","2264.36","","","","","","","","","","57.54","2152.62"
+\ No newline at end of file
+diff --git a/src/pages/Training.tsx b/src/pages/Training.tsx
+index 85b183c..5f6ee7d 100644
+--- a/src/pages/Training.tsx
++++ b/src/pages/Training.tsx
+@@ -107,7 +107,7 @@ function PersonalPlan() {
+           </h2>
+           <p className="muted">
+             {trained
+-              ? 'You’ve finished every module. Ask Qi in the corner anything and we’ll walk you through it on the real screen.'
++              ? 'You’ve finished every module. Tap Qi in the corner, ask out loud, and it’ll walk you through the answer on the real screen.'
+               : `${done} of ${modules.length} modules done · about ${minutesLeft} minutes left. Each step happens on the real panel: click what’s highlighted.`}
+           </p>
+           <div className="progress">
+diff --git a/src/styles.css b/src/styles.css
+index 1888277..84d9b0d 100644
+--- a/src/styles.css
++++ b/src/styles.css
+@@ -319,13 +319,42 @@ tr.clickable:hover td { background: var(--purple-tint) !important; }
+ .ask .tiny { margin-top: auto; }
+ .btn.mic.listening { background: var(--red); color: #fff; border-color: var(--red); }
+ 
+-/* Qi: floating helper bot */
+-.helper { position: fixed; right: 22px; bottom: 20px; z-index: 25; display: flex; flex-direction: column; align-items: flex-end; gap: 10px; pointer-events: none; }
+-.helper > * { pointer-events: auto; }
+-.helper-fab { width: 72px; height: 72px; border-radius: 50%; display: flex; align-items: center; justify-content: center; background: transparent; padding: 0; cursor: pointer; transition: transform .15s; }
+-.helper-fab:hover { transform: scale(1.06); }
+-.helper-fab:focus-visible { outline: 3px solid var(--purple-soft); }
+-.helper-fab .qi { filter: drop-shadow(0 6px 14px rgba(70, 30, 120, .35)); }
++/* Qi: voice-first helper that floats over the panel */
++.qi-float { position: fixed; z-index: 120; width: 64px; height: 64px; transition: left .6s cubic-bezier(.45, .05, .25, 1), top .6s cubic-bezier(.45, .05, .25, 1); }
++.helper-fab { position: relative; width: 64px; height: 64px; border-radius: 50%; display: flex; align-items: center; justify-content: center; background: transparent; padding: 0; transition: transform .15s; }
++.phase-idle .helper-fab:hover, .phase-unknown .helper-fab:hover, .phase-typing .helper-fab:hover { transform: scale(1.06); }
++.helper-fab:focus-visible { outline: 3px solid var(--purple-soft); border-radius: 50%; }
++.phase-guiding .helper-fab, .phase-thinking .helper-fab { cursor: default; }
++.qi-ripple { position: absolute; inset: 0; border-radius: 50%; border: 2px solid #5e3d90; animation: qi-ripple 1.4s ease-out infinite; }
++@keyframes qi-ripple { from { transform: scale(1); opacity: .7; } to { transform: scale(1.55); opacity: 0; } }
++
++.qi-bubble { position: absolute; top: 0; width: 300px; max-height: min(420px, calc(100vh - 24px)); overflow-y: auto; background: #fff; border: 1px solid #e6dcf2; border-radius: 14px; box-shadow: 0 14px 40px rgba(40, 10, 80, .2); padding: 12px 14px; display: flex; flex-direction: column; gap: 9px; animation: qi-in .22s ease-out; }
++.qi-bubble.small { width: 250px; flex-direction: row; align-items: flex-start; gap: 4px; padding: 10px 6px 10px 12px; }
++.side-right .qi-bubble { left: 76px; border-top-left-radius: 4px; }
++.side-left .qi-bubble { right: 76px; border-top-right-radius: 4px; }
++.up .qi-bubble { top: auto; bottom: 0; }
++.side-right.up .qi-bubble { border-top-left-radius: 14px; border-bottom-left-radius: 4px; }
++.side-left.up .qi-bubble { border-top-right-radius: 14px; border-bottom-right-radius: 4px; }
++@keyframes qi-in { from { opacity: 0; transform: translateY(6px) scale(.97); } to { opacity: 1; transform: none; } }
++.qi-tip-text { text-align: left; font-size: 12.5px; line-height: 1.45; color: var(--ink); padding: 0; background: none; }
++.qi-bubble-head { display: flex; align-items: center; gap: 4px; }
++.qi-bubble-head .tiny { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
++.qi-bubble p { margin: 0; }
++.qi-heard { font-size: 13px; color: #5e3d90; font-weight: 600; line-height: 1.4; }
++.qi-say { font-size: 13.5px; line-height: 1.5; color: var(--ink); }
++.qi-actions { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
++.qi-progress { display: flex; gap: 4px; }
++.qi-progress i { width: 6px; height: 5.5px; border-radius: 50%; background: #e2d7ef; }
++.qi-progress i.on { background: #5e3d90; }
++.qi-bubble .input-wrap { padding: 4px 4px 4px 10px; }
++.qi-bubble .chips .suggest { font-size: 11px; }
++.qi-dim { position: fixed; background: rgba(28, 16, 48, .28); z-index: 110; pointer-events: none; transition: all .35s ease; }
++.qi-ring { position: fixed; z-index: 111; border-radius: 10px; box-shadow: 0 0 0 3px #5e3d90, 0 0 0 8px rgba(94, 61, 144, .18); pointer-events: none; transition: all .35s ease; }
++.typing { display: inline-flex; gap: 4px; padding: 2px 0; }
++.typing span { width: 6px; height: 5.5px; border-radius: 50%; background: #5e3d90; animation: qi-type 1s infinite; }
++.typing span:nth-child(2) { animation-delay: .15s; }
++.typing span:nth-child(3) { animation-delay: .3s; }
++.helper-fab .qi { filter: drop-shadow(0 6px 16px rgba(70, 30, 120, .28)); }
+ .qi .qi-corner { transition: transform .25s cubic-bezier(.3, 1.6, .5, 1); }
+ .helper-fab:hover .qi-tl { transform: translate(-1.6px, -1.6px); }
+ .helper-fab:hover .qi-tr { transform: translate(1.6px, -1.6px); }
+@@ -333,6 +362,8 @@ tr.clickable:hover td { background: var(--purple-tint) !important; }
+ .helper-fab:hover .qi-bl { transform: translate(-1.6px, 1.6px); }
+ .qi .qi-eyes { animation: qi-blink 4.5s infinite; }
+ .qi.qi-idle .qi-dot { animation: qi-wave 4s ease-in-out infinite; }
++.qi.qi-listening .qi-dot { animation: qi-breathe 1.2s ease-in-out infinite; animation-delay: 0s !important; }
++@keyframes qi-breathe { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.3); } }
+ .qi.qi-thinking .qi-dot { animation: qi-chase 1.08s linear infinite; }
+ .qi.qi-thinking .qi-eyes { animation: qi-look 1.08s ease-in-out infinite; }
+ .qi.qi-happy .qi-face { animation: qi-hop .5s ease-out; transform-origin: 32px 32px; }
+@@ -342,21 +373,7 @@ tr.clickable:hover td { background: var(--purple-tint) !important; }
+ @keyframes qi-look { 0%, 100% { transform: translateX(-1.5px); } 50% { transform: translateX(1.5px); } }
+ @keyframes qi-hop { 0% { transform: translateY(0); } 40% { transform: translateY(-2.5px); } 100% { transform: translateY(0); } }
+ @media (prefers-reduced-motion: reduce) { .qi *, .qi { animation: none !important; transition: none !important; } }
+-.bot-bubble.typing { display: inline-flex; gap: 4px; padding: 11px 12px; }
+-.bot-bubble.typing span { width: 6px; height: 5.5px; border-radius: 50%; background: #5e3d90; animation: qi-type 1s infinite; }
+-.bot-bubble.typing span:nth-child(2) { animation-delay: .15s; }
+-.bot-bubble.typing span:nth-child(3) { animation-delay: .3s; }
+ @keyframes qi-type { 0%, 60%, 100% { opacity: .3; transform: translateY(0); } 30% { opacity: 1; transform: translateY(-3px); } }
+ 
+-.helper-tip { position: relative; max-width: 250px; background: #fff; border: 1px solid #eadcf7; border-radius: 12px; box-shadow: 0 8px 24px rgba(20, 0, 40, .14); padding: 10px 6px 10px 12px; display: flex; gap: 4px; align-items: flex-start; animation: helper-in .25s ease-out; margin-right: 18px; }
+-.helper-tip::after { content: ''; position: absolute; right: 22px; bottom: -7px; width: 12px; height: 12px; background: #fff; border-right: 1px solid #eadcf7; border-bottom: 1px solid #eadcf7; transform: rotate(45deg); }
+-.helper-tip-text { text-align: left; font-size: 12.5px; line-height: 1.45; color: var(--ink); padding: 0; background: none; }
+ 
+-.helper-panel { width: 370px; max-width: calc(100vw - 32px); height: min(600px, calc(100vh - 120px)); background: #fff; border: 1px solid var(--line); border-radius: 16px; box-shadow: 0 18px 48px rgba(30, 0, 60, .22); display: flex; flex-direction: column; overflow: hidden; gap: 0; animation: helper-in .2s ease-out; transform-origin: bottom right; }
+-@keyframes helper-in { from { opacity: 0; transform: translateY(8px) scale(.97); } to { opacity: 1; transform: none; } }
+-.helper-head { display: flex; align-items: center; gap: 10px; padding: 12px 12px 12px 14px; background: linear-gradient(135deg, var(--purple-soft), #fff); border-bottom: 1px solid var(--line); }
+-.helper-body { flex: 1; overflow-y: auto; padding: 14px; display: flex; flex-direction: column; gap: 10px; }
+-.helper-foot { border-top: 1px solid var(--line); padding: 10px 12px 8px; display: flex; flex-direction: column; gap: 6px; }
+-.helper-foot .tiny { margin: 0; text-align: center; }
+-.bot-bubble { align-self: flex-start; max-width: 90%; background: var(--panel); border-radius: 12px 12px 12px 4px; padding: 9px 12px; font-size: 12.5px; line-height: 1.45; }
+-.me-bubble { align-self: flex-end; max-width: 85%; background: var(--purple); color: #fff; border-radius: 12px 12px 4px 12px; padding: 8px 12px; font-size: 12.5px; }
++@keyframes helper-in-unused { from { opacity: 0; transform: translateY(8px) scale(.97); } to { opacity: 1; transform: none; } }
+diff --git a/src/training/guides.ts b/src/training/guides.ts
+new file mode 100644
+index 0000000..1c2e556
+--- /dev/null
++++ b/src/training/guides.ts
+@@ -0,0 +1,185 @@
++// Turns a question into a short walkthrough on the real panel: Qi flies to each part of the
++// screen, points at it and says one line. Data answers come from the venue's transactions
++// export (venueAnswers.ts); how-to answers hand over to the matching training lesson.
++
++import type { Payment } from '../data/demoVenue'
++import { summarize } from '../data/orders'
++import { money, shortDay } from '../data/periods'
++import { matches } from '../pages/Payments'
++import type { PageKey, PanelPreset } from '../store'
++import type { Faq, TrainingPack } from './types'
++import { answerVenue, type VenueAnswer } from './venueAnswers'
++
++export interface GuideStep {
++  /** data-tour id to spotlight. None: Qi talks from the corner. */
++  target?: string
++  /** One short line, shown in Qi's bubble and read aloud. */
++  say: string
++  /** Put the panel in this state as the step starts (page, dates, filters). */
++  apply?: PanelPreset
++  /** Click this data-tour element for the trainee, as a demonstration (e.g. a menu item or tab). */
++  click?: string
++}
++
++export interface Guide {
++  question: string
++  /** The full answer, shown on the last step. */
++  answer: string
++  lines?: Array<[string, string]>
++  note?: string
++  steps: GuideStep[]
++  /** For how-to questions: the lesson to replay after Qi's intro. */
++  lesson?: { packId: string; moduleId: string; lessonId: string; title: string }
++}
++
++const NAV: Partial<Record<PageKey, string>> = { dashboard: 'Dashboard', orders: 'Orders', payments: 'Payments', tableView: 'Table View' }
++
++function nav(page: PageKey, why: string, current: PageKey): GuideStep[] {
++  if (current === page) return []
++  return [{ target: `nav-${page}`, say: `${why} live on ${NAV[page]}. Opening it from the menu.`, click: `nav-${page}` }]
++}
++
++/** "in the last 30 days" → "the last 30 days", so it reads well after "set the dates to". */
++const plain = (range?: string) => (range ?? 'in the last 30 days').replace(/^(in|on) /, '')
++
++function dates(a: VenueAnswer, page: PageKey): GuideStep {
++  return {
++    target: 'date-button',
++    apply: a.open ? { ...a.open, page } : { page },
++    say: `I've set the dates to ${plain(a.range)}. You change them with this button.`,
++  }
++}
++
++const STOP = new Set(['the', 'and', 'how', 'what', 'did', 'does', 'was', 'were', 'are', 'can', 'for', 'our', 'this', 'that', 'last', 'week', 'month', 'days', 'with', 'from', 'will', 'have', 'has', 'get', 'see', 'you', 'they', 'their', 'who', 'which', 'why', 'when', 'today', 'yesterday', 'much', 'many', 'show', 'tell', 'please', 'qi'])
++
++function scoreFaq(f: Faq, q: string) {
++  const words = q.toLowerCase().split(/\W+/).filter((w) => w.length > 2 && !STOP.has(w))
++  if (!words.length) return 0
++  const hay = `${f.q} ${(f.keywords ?? []).join(' ')}`.toLowerCase()
++  const body = f.a.toLowerCase()
++  return words.reduce((s, w) => s + (hay.includes(w) ? 2 : body.includes(w) ? 1 : 0), 0)
++}
++
++/** Questions that are clearly "how do I…" go to a lesson even if they mention money words. */
++const HOW_TO = /^\s*(how (do|can|would|should) (i|we|you)|how to|where (do|can|is)|what does|what's the difference|show me how|teach me|can i)\b/i
++
++export function buildGuide(question: string, payments: Payment[], packs: TrainingPack[], current: PageKey): Guide | null {
++  const q = question.trim()
++  if (!q) return null
++  const faqs = packs.flatMap((pack) => pack.faqs.map((f) => ({ f, pack, s: scoreFaq(f, q) }))).sort((a, b) => b.s - a.s)
++  const bestFaq = faqs[0] && faqs[0].s >= 2 ? faqs[0] : null
++
++  const a = HOW_TO.test(q) && bestFaq ? null : answerVenue(q, payments)
++  if (a) return dataGuide(q, a, payments, current)
++
++  if (bestFaq) {
++    const { f, pack } = bestFaq
++    const [moduleId, lessonId] = (f.lesson ?? '').split('/')
++    const mod = pack.modules.find((m) => m.id === moduleId)
++    const lesson = mod?.lessons.find((l) => l.id === lessonId)
++    return {
++      question: q,
++      answer: f.a,
++      steps: [{ say: f.a }],
++      lesson: mod && lesson ? { packId: pack.id, moduleId, lessonId, title: lesson.title } : undefined,
++    }
++  }
++  return null
++}
++
++function dataGuide(q: string, a: VenueAnswer, payments: Payment[], current: PageKey): Guide {
++  const base = { question: q, answer: a.text, lines: a.lines, note: a.note }
++  const steps: GuideStep[] = []
++
++  switch (a.kind) {
++    case 'revenue':
++      steps.push(...nav('dashboard', 'Takings', current), dates(a, 'dashboard'))
++      steps.push({ target: 'kpi-revenue', say: a.text })
++      steps.push({ target: 'tab-revenue', say: 'The chart shows revenue day by day. Tap a day to see how guests paid.' })
++      break
++    case 'tips':
++      steps.push(...nav('dashboard', 'Tips', current), dates(a, 'dashboard'))
++      steps.push({ target: 'kpi-tips', say: a.text })
++      steps.push({ target: 'tab-tips', click: 'tab-tips', say: 'Switch the chart to Tips to see them day by day.' })
++      break
++    case 'payout':
++      steps.push(...nav('dashboard', 'Payouts', current), dates(a, 'dashboard'))
++      steps.push({ target: 'payout-breakdown', say: 'Here’s how it adds up: revenue, plus tips and loyalty credit, minus qlub’s Vendor Fee.' })
++      steps.push({ target: 'payout-total', say: a.text })
++      break
++    case 'fees':
++      steps.push(...nav('dashboard', 'Fees', current), dates(a, 'dashboard'))
++      if (a.focus !== 'diner') steps.push({ target: 'kpi-vendorfee', say: a.focus === 'vendor' ? a.text : 'The Vendor Fee is qlub’s commission. It comes off the payout.' })
++      if (a.focus !== 'vendor') steps.push({ target: 'kpi-dinerfee', say: a.focus === 'diner' ? a.text : 'The Diner Fee is paid by guests on top of the bill and goes to qlub.' })
++      if (a.focus === 'both') steps.push({ say: a.text })
++      break
++    case 'refunds':
++      steps.push(...nav('dashboard', 'Refunds', current), dates(a, 'dashboard'))
++      steps.push({ target: 'kpi-refunds', say: a.text })
++      break
++    case 'loyalty':
++      steps.push(...nav('dashboard', 'Loyalty credit', current), dates(a, 'dashboard'))
++      steps.push({ target: 'payout-breakdown', say: a.text })
++      break
++    case 'busiest':
++      steps.push(...nav('dashboard', 'Daily takings', current), dates(a, 'dashboard'))
++      steps.push({ target: `chart-day-${a.focus}`, say: a.text })
++      steps.push({ target: 'card-split', say: `And this is how guests paid on ${shortDay(a.focus!)}.` })
++      break
++    case 'popular':
++      steps.push(...nav('dashboard', 'Best sellers', current))
++      steps.push({ target: 'popular-items', apply: { page: 'dashboard' }, say: a.text })
++      break
++    case 'brands':
++      if (a.focus) {
++        steps.push(...nav('dashboard', 'Card brands', current))
++        steps.push({ target: `chart-day-${a.focus}`, apply: a.open, say: `I've picked ${shortDay(a.focus)} on the chart.` })
++        steps.push({ target: 'card-split', say: a.text })
++      } else {
++        steps.push(...nav('payments', 'Card details', current), dates(a, 'payments'))
++        steps.push({ target: 'payments-col-method', say: a.text })
++      }
++      break
++    case 'owe': {
++      steps.push(...nav('orders', 'Unpaid bills', current))
++      steps.push({ target: 'orders-status-filter', apply: a.open, say: `I've filtered Orders to Partially Paid bills from ${plain(a.range)}.` })
++      steps.push({ target: 'orders-col-status', say: 'Partially Paid means part of the bill is still to pay. The Remaining column shows how much.' })
++      steps.push({ target: 'orders-table', say: a.text })
++      break
++    }
++    case 'order':
++      steps.push(...nav('orders', 'Bills', current))
++      steps.push({ target: 'orders-id-search', apply: { page: 'orders', period: { key: 'last30' }, orderId: a.focus }, say: `Search by the order number from the receipt. I've opened order ${a.focus}.` })
++      steps.push({ target: 'order-payments', say: 'Every payment on this bill is listed here.' })
++      steps.push({ target: 'order-remaining', say: a.text })
++      break
++    case 'card':
++    case 'amount': {
++      const first = payments.find((p) => (a.kind === 'card' ? p.last4 === a.focus : matches(p, a.focus!)))
++      steps.push(...nav('payments', 'Guest payments', current))
++      steps.push({ target: 'payments-search', apply: a.open, say: `I've searched Payments for ${a.kind === 'card' ? `the card ending ${a.focus}` : money(Number(a.focus))}, over ${plain(a.range)}.` })
++      steps.push({ target: first ? `payment-row-${first.id}` : 'payments-table', say: a.text })
++      break
++    }
++    case 'average':
++    case 'count': {
++      const latest = summarize(payments)[0]
++      steps.push(...nav('orders', 'Bills', current))
++      steps.push({ target: 'date-button', apply: a.open, say: `I've set the dates to ${plain(a.range)}. Each row is one bill.` })
++      steps.push({ target: latest ? `order-row-${latest.id}` : 'orders-table', say: a.text })
++      break
++    }
++    default:
++      steps.push({ say: a.text })
++  }
++  return { ...base, steps }
++}
++
++export const EXAMPLES = [
++  'How much did we make last week?',
++  'What were tips this month?',
++  'Which tables still owe money?',
++  'What will we be paid?',
++  'Find the card ending 4242',
++  'How do I issue a refund?',
++]
+diff --git a/src/training/venueAnswers.ts b/src/training/venueAnswers.ts
+index 5c823b4..fb334d8 100644
+--- a/src/training/venueAnswers.ts
++++ b/src/training/venueAnswers.ts
+@@ -9,7 +9,17 @@ import { DEMO_NOW } from '../data/demoVenue'
+ import { matches } from '../pages/Payments'
+ import type { PanelPreset } from '../store'
+ 
++export type AnswerKind =
++  | 'order' | 'card' | 'amount' | 'owe' | 'payout' | 'tips' | 'brands' | 'average'
++  | 'popular' | 'busiest' | 'revenue' | 'fees' | 'refunds' | 'loyalty' | 'count' | 'empty'
++
+ export interface VenueAnswer {
++  /** Which question this answers, so Qi can pick the right walkthrough. */
++  kind: AnswerKind
++  /** The date range used, in words ("last week (22 – 28 Sep)"). */
++  range?: string
++  /** What to point at: an order id, a payment id, a day (yyyy-mm-dd) or a search term. */
++  focus?: string
+   text: string
+   lines?: Array<[string, string]>
+   note?: string
+@@ -26,6 +36,7 @@ const MONTHS = ['january', 'february', 'march', 'april', 'may', 'june', 'july',
+ const pad = (n: number) => String(n).padStart(2, '0')
+ 
+ function custom(label: string, start: string, end: string): Range {
++  if (start !== end && !/^on /.test(label)) label = `${label} (${shortDay(start)} – ${shortDay(end)})`
+   return { label, period: periodFor('custom', { start, end }), preset: { key: 'custom', start, end } }
+ }
+ function preset(key: PeriodKey, label: string): Range {
+@@ -85,8 +96,10 @@ export function answerVenue(raw: string, payments: Payment[]): VenueAnswer | nul
+   const oid = q.match(/\b(\d{10})\b/)
+   if (oid) {
+     const o = orders.find((x) => x.id === oid[1])
+-    if (!o) return { text: `I can't find order ${oid[1]}. Check the digits on the receipt.` }
++    if (!o) return { kind: 'empty', text: `I can't find order ${oid[1]}. Check the digits on the receipt.` }
+     return {
++      kind: 'order',
++      focus: o.id,
+       text: `Order ${o.id} is ${table(o.tableName)}'s bill from ${shortDay(businessDay(o.time))}: ${money(o.bill)}. ${
+         o.remaining > 0 ? `${money(o.paid + o.loyalty)} paid so far, ${money(o.remaining)} still owed.` : 'Fully paid.'
+       }`,
+@@ -99,8 +112,11 @@ export function answerVenue(raw: string, payments: Payment[]): VenueAnswer | nul
+   const card = q.match(/(?:ending|last ?4|last four|digits|card)\D{0,12}(\d{4})\b/) || q.match(/^\s*(\d{4})\s*$/)
+   if (card) {
+     const xs = inR.filter((p) => p.last4 === card[1])
+-    if (!xs.length) return { text: `No payments from a card ending ${card[1]} ${r.label}. Check the digits, or try a wider date range.` }
++    if (!xs.length) return { kind: 'empty', text: `No payments from a card ending ${card[1]} ${r.label}. Check the digits, or try a wider date range.` }
+     return {
++      kind: 'card',
++      range: r.label,
++      focus: card[1],
+       text: `${xs.length} payment${xs.length > 1 ? 's' : ''} from the ${brand(xs[0].method)} ending ${card[1]} ${r.label}, ${money(sum(xs, (x) => x.paid + x.tip + x.dinerFee))} in total.`,
+       lines: xs.slice(0, 5).map((p) => [`${shortDay(businessDay(p.time))} · order ${p.orderId}`, money(p.paid + p.tip + p.dinerFee)]),
+       open: { label: 'Show in Payments', page: 'payments', ...range(), paymentsQuery: card[1] },
+@@ -112,9 +128,12 @@ export function answerVenue(raw: string, payments: Payment[]): VenueAnswer | nul
+   if (amt) {
+     const xs = inR.filter((p) => matches(p, amt[1]))
+     if (!xs.length)
+-      return { text: `No payment of ${money(Number(amt[1]))} ${r.label}. Guests often quote the total with the tip: try that amount, or their card's last 4 digits.` }
++      return { kind: 'empty', text: `No payment of ${money(Number(amt[1]))} ${r.label}. Guests often quote the total with the tip: try that amount, or their card's last 4 digits.` }
+     const p = xs[0]
+     return {
++      kind: 'amount',
++      range: r.label,
++      focus: amt[1],
+       text: `Found ${xs.length === 1 ? 'it' : `${xs.length} payments`}: ${money(p.paid + p.tip + p.dinerFee)} by ${brand(p.method)} ${p.last4}, order ${p.orderId}, ${shortDay(businessDay(p.time))}.`,
+       open: { label: 'Show in Payments', page: 'payments', ...range(), paymentsQuery: amt[1] },
+     }
+@@ -123,8 +142,11 @@ export function answerVenue(raw: string, payments: Payment[]): VenueAnswer | nul
+   // 4. Tables that still owe money.
+   if (/\b(owe|owing|outstanding|unpaid|partially|part paid|part-paid|open bills?|still to pay|remaining)\b/.test(q)) {
+     const xs = orders.filter((o) => o.remaining > 0 && inPeriod(o.time, r.period))
+-    if (!xs.length) return { text: `Nothing is still owed ${r.label}. Every bill is fully paid.` }
++    if (!xs.length) return { kind: 'empty', text: `Nothing is still owed ${r.label}. Every bill is fully paid.` }
+     return {
++      kind: 'owe',
++      range: r.label,
++      focus: xs[0].id,
+       text: `${xs.length} bill${xs.length > 1 ? 's' : ''} ${r.label} still owe${xs.length > 1 ? '' : 's'} ${money(xs.reduce((s, o) => s + o.remaining, 0))}.`,
+       lines: xs.map((o) => [`${table(o.tableName)} · ${shortDay(businessDay(o.time))}`, `${money(o.remaining)} left`]),
+       note: 'Older part-paid bills may have been settled at the POS. Check with your manager.',
+@@ -137,6 +159,8 @@ export function answerVenue(raw: string, payments: Payment[]): VenueAnswer | nul
+   // 5. Payout.
+   if (/\b(payout|paid out|pay ?out|receivable|settle|settlement|will we (be|get) paid|owe us|transfer)\b/.test(q)) {
+     return {
++      kind: 'payout',
++      range: r.label,
+       text: `qlub owes the venue ${money(f.receivable)} ${r.label}.`,
+       lines: [
+         ['Revenue', money(f.revenue)],
+@@ -156,6 +180,9 @@ export function answerVenue(raw: string, payments: Payment[]): VenueAnswer | nul
+     const withTip = inR.filter((p) => p.tip > 0)
+     const top = [...withTip].sort((a, b) => b.tip - a.tip)[0]
+     return {
++      kind: 'tips',
++      range: r.label,
++      focus: top ? businessDay(top.time) : undefined,
+       text: `Tips ${r.label}: ${money(f.tips)}. ${withTip.length} of ${inR.filter((p) => p.method !== 'Loyalty').length} card payments included a tip, about ${f.revenue ? ((f.tips / f.revenue) * 100).toFixed(1) : 0}% of revenue.`,
+       note: top ? `Biggest: ${money(top.tip)} on ${shortDay(businessDay(top.time))}.` : undefined,
+       open: { label: 'Show on the Dashboard', page: 'dashboard', ...range() },
+@@ -167,10 +194,13 @@ export function answerVenue(raw: string, payments: Payment[]): VenueAnswer | nul
+     const by: Record<string, Payment[]> = {}
+     inR.forEach((p) => (by[brand(p.method)] = [...(by[brand(p.method)] ?? []), p]))
+     const rows = Object.entries(by).sort((a, b) => sum(b[1], (x) => x.paid) - sum(a[1], (x) => x.paid))
+-    if (!rows.length) return { text: `No payments ${r.label}.` }
++    if (!rows.length) return { kind: 'empty', text: `No payments ${r.label}.` }
+     const day = r.period.start === r.period.end ? r.period.start : undefined
+     return {
+-      text: `How guests paid ${r.label}:`,
++      kind: 'brands',
++      range: r.label,
++      focus: day,
++      text: `How guests paid ${r.label}: ${rows.map(([k, xs]) => `${k} ${money(sum(xs, (x) => x.paid))}`).join(', ')}.`,
+       lines: rows.map(([k, xs]) => [`${k} · ${xs.length} payment${xs.length > 1 ? 's' : ''}`, money(sum(xs, (x) => x.paid))]),
+       open: day
+         ? { label: 'Show the card split', page: 'dashboard', period: { key: 'last30' }, day }
+@@ -181,8 +211,10 @@ export function answerVenue(raw: string, payments: Payment[]): VenueAnswer | nul
+   // 8. Average bill / spend.
+   if (/\b(average|avg|per (table|bill|guest)|typical)\b/.test(q)) {
+     const os = orders.filter((o) => inPeriod(o.time, r.period))
+-    if (!os.length) return { text: `No bills ${r.label}.` }
++    if (!os.length) return { kind: 'empty', text: `No bills ${r.label}.` }
+     return {
++      kind: 'average',
++      range: r.label,
+       text: `${os.length} bills ${r.label}. Average bill ${money(os.reduce((s, o) => s + o.bill, 0) / os.length)}, average payment ${money(sum(inR, (x) => x.paid + x.tip + x.dinerFee) / inR.length)} including tip and fees.`,
+       open: { label: 'Show in Orders', page: 'orders', ...range() },
+     }
+@@ -191,19 +223,75 @@ export function answerVenue(raw: string, payments: Payment[]): VenueAnswer | nul
+   // 9. Best sellers.
+   if (/\b(popular|best ?sell|top (items?|sellers?|dishes)|sell(s|ing)? (the )?most|most (sold|ordered))\b/.test(q)) {
+     return {
++      kind: 'popular',
+       text: `Top sellers this month: ${POPULAR_ITEMS.slice(0, 3).map(([n, c]) => `${n} (${c} sold)`).join(', ')}.`,
+       note: 'From the Dashboard’s Popular Items.',
+       open: { label: 'Show Popular Items', page: 'dashboard', ...range() },
+     }
+   }
+ 
++  // 10a. Fees.
++  if (/\b(fees?|commission|charges?|surcharge)\b/.test(q)) {
++    const diner = /\bdiner\b/.test(q)
++    const vendor = /\b(vendor|commission|we pay|our)\b/.test(q)
++    return {
++      kind: 'fees',
++      range: r.label,
++      focus: diner && !vendor ? 'diner' : vendor && !diner ? 'vendor' : 'both',
++      text: diner && !vendor
++        ? `Guests paid ${money(f.dinerFee)} in Diner Fees ${r.label}. That goes to qlub, not the venue.`
++        : vendor && !diner
++          ? `The Vendor Fee ${r.label} was ${money(f.vendorFee)}. That's qlub's commission, taken off the payout.`
++          : `Fees ${r.label}: the Vendor Fee (qlub's commission, paid by the venue) was ${money(f.vendorFee)}, and guests paid ${money(f.dinerFee)} in Diner Fees to qlub.`,
++      open: { label: 'Show on the Dashboard', page: 'dashboard', ...range() },
++    }
++  }
++
++  // 10b. Refunds.
++  if (/\brefund/.test(q)) {
++    return {
++      kind: 'refunds',
++      range: r.label,
++      text: f.refunds ? `${money(f.refunds)} was refunded ${r.label}.` : `No refunds ${r.label}.`,
++      open: { label: 'Show on the Dashboard', page: 'dashboard', ...range() },
++    }
++  }
++
++  // 10c. Loyalty credit.
++  if (/\b(loyalty|points|credit|rewards?)\b/.test(q)) {
++    const xs = inR.filter((p) => p.method === 'Loyalty')
++    return {
++      kind: 'loyalty',
++      range: r.label,
++      text: xs.length
++        ? `Guests redeemed ${money(f.loyalty)} of loyalty credit ${r.label}, across ${xs.length} payment${xs.length > 1 ? 's' : ''}. qlub pays that back in the payout.`
++        : `No loyalty credit was redeemed ${r.label}.`,
++      open: { label: 'Show the payout', page: 'dashboard', ...range(), payoutOpen: true },
++    }
++  }
++
++  // 10d. How many bills or payments.
++  if (/\bhow many\b|\bnumber of\b|\bcount\b/.test(q)) {
++    const os = orders.filter((o) => inPeriod(o.time, r.period))
++    const card = inR.filter((p) => p.method !== 'Loyalty')
++    return {
++      kind: 'count',
++      range: r.label,
++      text: `${os.length} bill${os.length === 1 ? '' : 's'} ${r.label}, paid with ${card.length} card or wallet payment${card.length === 1 ? '' : 's'}.`,
++      open: { label: 'Show in Orders', page: 'orders', ...range() },
++    }
++  }
++
+   // 10. Busiest day.
+   if (/\b(busiest|best day|biggest day)\b/.test(q)) {
+     const by: Record<string, number> = {}
+     inR.filter((p) => p.method !== 'Loyalty').forEach((p) => (by[businessDay(p.time)] = (by[businessDay(p.time)] ?? 0) + p.paid))
+     const [d, v] = Object.entries(by).sort((a, b) => b[1] - a[1])[0] ?? []
+-    if (!d) return { text: `No payments ${r.label}.` }
++    if (!d) return { kind: 'empty', text: `No payments ${r.label}.` }
+     return {
++      kind: 'busiest',
++      range: r.label,
++      focus: d,
+       text: `The busiest day ${r.label} was ${shortDay(d)}, with ${money(v)} in revenue.`,
+       open: { label: 'Show on the chart', page: 'dashboard', period: { key: 'last30' }, day: d },
+     }
+@@ -213,9 +301,11 @@ export function answerVenue(raw: string, payments: Payment[]): VenueAnswer | nul
+   if (/\b(revenue|takings|take|took|sales|sold|made|make|earn|earned|turnover|money|how much|figures|numbers|performance)\b/.test(q)) {
+     if (!f.payments) {
+       const before = r.period.end < DATA_FROM
+-      return { text: before ? `The demo data starts on ${shortDay(DATA_FROM)}.` : `No payments ${r.label}. The last payment was on ${shortDay(businessDay(payments[0].time))}.` }
++      return { kind: 'empty', text: before ? `The demo data starts on ${shortDay(DATA_FROM)}.` : `No payments ${r.label}. The last payment was on ${shortDay(businessDay(payments[0].time))}.` }
+     }
+     return {
++      kind: 'revenue',
++      range: r.label,
+       text: `${cap(r.label)} the venue took ${money(f.revenue)} in revenue, plus ${money(f.tips)} in tips, across ${f.orders} bill${f.orders > 1 ? 's' : ''}.`,
+       lines: [
+         ['Revenue', money(f.revenue)],
+diff --git a/src/training/voice.ts b/src/training/voice.ts
+index fbca84b..840d626 100644
+--- a/src/training/voice.ts
++++ b/src/training/voice.ts
+@@ -21,11 +21,25 @@ export function saveVoiceOn(on: boolean) {
+ 
+ export const canSpeak = () => typeof window !== 'undefined' && 'speechSynthesis' in window
+ 
+-export function speak(text: string) {
+-  if (!canSpeak() || !text) return
++/** Speaks the text. onEnd fires when it finishes (or straight away if speech isn't available). */
++export function speak(text: string, onEnd?: () => void) {
++  if (!canSpeak() || !text) {
++    onEnd?.()
++    return
++  }
+   try {
+     window.speechSynthesis.cancel()
+     const u = new SpeechSynthesisUtterance(text)
++    if (onEnd) {
++      let done = false
++      const finish = () => {
++        if (done) return
++        done = true
++        onEnd()
++      }
++      u.onend = finish
++      u.onerror = finish
++    }
+     u.lang = 'en-AU'
+     u.rate = 1.03
+     const voice = window.speechSynthesis.getVoices().find((v) => v.lang === 'en-AU') ??
+@@ -33,7 +47,7 @@ export function speak(text: string) {
+     if (voice) u.voice = voice
+     window.speechSynthesis.speak(u)
+   } catch {
+-    /* speech unavailable */
++    onEnd?.()
+   }
+ }
+ 
+@@ -65,12 +79,14 @@ function ctor(): RecognitionCtor | null {
+ export const canListen = () => typeof window !== 'undefined' && !!ctor()
+ 
+ /** One-shot listening: press the mic, say something, get the text. */
+-export function useListen(onText: (text: string) => void) {
++export function useListen(onText: (text: string) => void, onInterim?: (text: string) => void) {
+   const [listening, setListening] = useState(false)
+   const [error, setError] = useState<string | null>(null)
+   const rec = useRef<Recognition | null>(null)
+   const cb = useRef(onText)
+   cb.current = onText
++  const interim = useRef(onInterim)
++  interim.current = onInterim
+ 
+   const stop = useCallback(() => {
+     rec.current?.stop()
+@@ -86,11 +102,14 @@ export function useListen(onText: (text: string) => void) {
+     stopSpeaking()
+     const r = new C()
+     r.lang = 'en-AU'
+-    r.interimResults = false
++    r.interimResults = !!interim.current
+     r.continuous = false
+     r.onresult = (e) => {
+-      const text = e.results[0]?.[0]?.transcript?.trim()
+-      if (text) cb.current(text)
++      const res = e.results[0] as ArrayLike<{ transcript: string }> & { isFinal?: boolean }
++      const text = res?.[0]?.transcript?.trim()
++      if (!text) return
++      if (res.isFinal === false) interim.current?.(text)
++      else cb.current(text)
+     }
+     r.onerror = (e) => setError(e.error === 'not-allowed' ? 'Microphone access was blocked. Allow it in the browser, or type instead.' : null)
+     r.onend = () => setListening(false)
+-- 
+2.43.0
+
+
+From 8e2bc7781dba683649e155e1eab2cd9176e38ba4 Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Tue, 20 Oct 2026 15:58:59 +1100
+Subject: [PATCH 5/5] Show Qi's tip on every page and make Qi stand out on
+ white screens
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01TrGYPmsaYfv65uvaw4k5Qn
+---
+ src/components/HelperBot.tsx | 11 +++++++----
+ src/styles.css               |  6 +++++-
+ 2 files changed, 12 insertions(+), 5 deletions(-)
+
+diff --git a/src/components/HelperBot.tsx b/src/components/HelperBot.tsx
+index 176ddda..f5401f0 100644
+--- a/src/components/HelperBot.tsx
++++ b/src/components/HelperBot.tsx
+@@ -73,7 +73,9 @@ export function HelperBot() {
+   const [spot, setSpot] = useState<Spot | null>(null)
+   const [view, setView] = useState({ w: window.innerWidth, h: window.innerHeight })
+   const [tip, setTip] = useState<string | null>(null)
+-  const [tipSeen, setTipSeen] = useState(false)
++  // Pages where the tip has been shown or dismissed (each page gets its own tip once).
++  const [tipSeen, setTipSeenFor] = useState<Partial<Record<PageKey, true>>>({})
++  const setTipSeen = (_: true) => setTipSeenFor((s) => ({ ...s, [pageRef.current]: true }))
+   const timers = useRef<number[]>([])
+   const qiClicking = useRef(false)
+   const pageRef = useRef(page)
+@@ -263,10 +265,11 @@ export function HelperBot() {
+     }
+   }, [end])
+ 
+-  // Peek out with a tip a few seconds after landing, once per session.
++  // Peek out with a tip shortly after landing on each page, once per page per session.
+   useEffect(() => {
+-    if (phase !== 'idle' || tipSeen) return
+-    const t = window.setTimeout(() => setTip(TIPS[page] ?? TIPS.training!), 2500)
++    setTip(null)
++    if (phase !== 'idle' || tipSeen[page]) return
++    const t = window.setTimeout(() => setTip(TIPS[page] ?? 'Need a hand? Tap me and ask out loud.'), 1800)
+     return () => window.clearTimeout(t)
+   }, [page, phase, tipSeen])
+   useEffect(() => {
+diff --git a/src/styles.css b/src/styles.css
+index 84d9b0d..e73d767 100644
+--- a/src/styles.css
++++ b/src/styles.css
+@@ -354,7 +354,11 @@ tr.clickable:hover td { background: var(--purple-tint) !important; }
+ .typing span { width: 6px; height: 5.5px; border-radius: 50%; background: #5e3d90; animation: qi-type 1s infinite; }
+ .typing span:nth-child(2) { animation-delay: .15s; }
+ .typing span:nth-child(3) { animation-delay: .3s; }
+-.helper-fab .qi { filter: drop-shadow(0 6px 16px rgba(70, 30, 120, .28)); }
++.helper-fab .qi { filter: drop-shadow(0 6px 16px rgba(70, 30, 120, .32)); }
++.helper-fab .qi-light > circle:first-child { stroke: #5e3d90; stroke-width: 1.6; stroke-opacity: .55; }
++.phase-idle .helper-fab::after { content: ''; position: absolute; inset: -3px; border-radius: 50%; box-shadow: 0 0 0 0 rgba(94, 61, 144, .35); animation: qi-nudge 3.2s ease-out infinite; pointer-events: none; }
++@keyframes qi-nudge { 0%, 60% { box-shadow: 0 0 0 0 rgba(94, 61, 144, .35); } 100% { box-shadow: 0 0 0 12px rgba(94, 61, 144, 0); } }
++@media (prefers-reduced-motion: reduce) { .phase-idle .helper-fab::after { animation: none; } }
+ .qi .qi-corner { transition: transform .25s cubic-bezier(.3, 1.6, .5, 1); }
+ .helper-fab:hover .qi-tl { transform: translate(-1.6px, -1.6px); }
+ .helper-fab:hover .qi-tr { transform: translate(1.6px, -1.6px); }
+-- 
+2.43.0
+
